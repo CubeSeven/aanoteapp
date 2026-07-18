@@ -1,0 +1,63 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>TUI Notes</title>
+  <link rel="stylesheet" href="css/style.css" />
+</head>
+<body>
+  <div id="backdrop"></div>
+  <div id="app">
+    <aside id="file-navigator" tabindex="0">
+      <div id="file-tree"></div>
+      <div id="sidebar-footer">
+        <button id="btn-settings" title="Settings"></button>
+      </div>
+    </aside>
+    <main id="editor-panel">
+      <div id="editor-placeholder">
+        <span>add a note</span>
+      </div>
+      <div id="editor-container" class="hidden">
+        <input id="title-input" type="text" placeholder="Untitled" spellcheck="false" autocomplete="off" />
+        <div id="cm-host"></div>
+      </div>
+    </main>
+  </div>
+  <div id="action-bar">
+    <button class="action-btn" id="sidebar-toggle" title="Toggle panel (Ctrl+\)"></button>
+    <button class="action-btn" id="btn-new-note" title="New note (F2)"></button>
+    <button class="action-btn" id="btn-new-folder" title="New folder (F3)"></button>
+    <button class="action-btn" id="btn-search" title="Search (Ctrl+F)"></button>
+  </div>
+  <div id="search-modal" class="hidden">
+    <div id="search-box">
+      <div id="search-box-row">
+        <span class="ic" id="search-icon-placeholder"></span>
+        <input id="search-input" type="text" placeholder="Search notes... (Esc to cancel)" spellcheck="false" autocomplete="off" />
+      </div>
+      <div id="search-results"></div>
+    </div>
+  </div>
+  <div id="context-menu" class="hidden">
+    <div class="context-item" id="ctx-rename">Rename (F4)</div>
+    <div class="context-item" id="ctx-delete">Delete (Del)</div>
+  </div>
+  <div id="error-banner" class="hidden"></div>
+  <div id="settings-modal" class="hidden">
+    <div id="settings-box">
+      <div id="settings-header">Settings</div>
+      <div class="setting-item">
+        <span class="setting-label">Local Notes Directory</span>
+        <button class="setting-btn active" id="btn-import-folder">Choose Folder</button>
+      </div>
+      <div class="setting-item">
+        <span class="setting-label">Google Drive File Syncing</span>
+        <button class="setting-btn">Connect (Coming Soon)</button>
+      </div>
+    </div>
+  </div>
+  <script type="module" src="js/app.js"></script>
+</body>
+</html>
