@@ -4,6 +4,7 @@
 
 import { createEditor } from "./cm.bundle.js";
 import { loadIcons, iconHTML } from "./icons.js";
+import { GDRIVE_CLIENT_ID, GDRIVE_CLIENT_SECRET } from "./gdrive-config.js";
 
 const { invoke } = window.__TAURI__.core;
 const { open } = window.__TAURI__.dialog;
@@ -170,8 +171,7 @@ btnImportFolder.addEventListener("click", async () => {
 
 // ---------- Google Drive sync ----------
 
-const GDRIVE_CLIENT_ID = "YOUR_GOOGLE_CLIENT_ID";
-const GDRIVE_CLIENT_SECRET = "YOUR_GOOGLE_CLIENT_SECRET";
+/* GDrive credentials imported from gdrive-config.js */
 
 async function updateGDriveStatus() {
   if (!gdriveStatusLbl) return;

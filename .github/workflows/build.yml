@@ -28,6 +28,11 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Inject GDrive credentials
+        run: |
+          sed -i "s|YOUR_GOOGLE_CLIENT_ID|${{ secrets.GDRIVE_CLIENT_ID }}|g" js/app.js
+          sed -i "s|YOUR_GOOGLE_CLIENT_SECRET|${{ secrets.GDRIVE_CLIENT_SECRET }}|g" js/app.js
+
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
         with:
