@@ -4,8 +4,11 @@
   padding: 0;
   box-sizing: border-box;
   border-radius: 0 !important;
-  animation: none !important;
   box-shadow: none !important;
+}
+
+*:not(#sync-spinner) {
+  animation: none !important;
 }
 
 :root {
@@ -29,12 +32,14 @@ html, body {
   font-size: 14px;
   line-height: 1.5;
   overflow: hidden;
+  display: flex;
+  flex-direction: column;
 }
 
 #app {
   display: flex;
-  height: 100vh;
-  border: 1px solid var(--border);
+  flex: 1;
+  min-height: 0;
 }
 
 /* ===== Icons (Lucide, inherit color) ===== */
@@ -112,19 +117,20 @@ html, body {
   min-height: 30px;
   cursor: pointer;
   user-select: none;
+  -webkit-user-select: none;
   white-space: nowrap;
   overflow: hidden;
   position: relative;
-  touch-action: pan-y; /* vertical scroll ok, horizontal/long-press ours */
+  touch-action: pan-y;
 }
 
 .tree-guides {
   flex-shrink: 0;
   color: var(--border);
-  font-size: 12px;
-  letter-spacing: 2px;
+  font-size: 14px;
+  font-family: var(--font);
   line-height: 1;
-  padding-left: 4px;
+  white-space: pre;
 }
 
 .tree-icon {
@@ -139,18 +145,14 @@ html, body {
   padding-right: 6px;
 }
 
-.tree-row:hover,
-.tree-row.selected {
-  background: var(--fg);
-  color: var(--bg);
+@media (hover: hover) {
+  .tree-row:hover .tree-label {
+    text-decoration: underline;
+  }
 }
-.tree-row:hover .tree-guides,
-.tree-row.selected .tree-guides {
-  color: var(--muted);
-}
-.tree-row:hover .ic svg,
-.tree-row.selected .ic svg {
-  stroke: var(--bg);
+
+.tree-row.selected .tree-label {
+  font-weight: bold;
 }
 
 /* Row being dragged: source dims, lifts visually */
@@ -225,6 +227,46 @@ html, body {
   display: block;
 }
 
+/* ===== Custom titlebar ===== */
+#titlebar {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  height: 32px;
+  background: var(--bg);
+  color: var(--fg);
+  font-family: var(--font);
+  font-size: 12px;
+  user-select: none;
+  flex-shrink: 0;
+  -webkit-app-region: drag;
+}
+#title-buttons {
+  display: flex;
+  height: 100%;
+}
+#title-buttons button {
+  width: 40px;
+  height: 100%;
+  border: none;
+  background: transparent;
+  color: var(--fg);
+  font-family: var(--font);
+  font-size: 14px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  -webkit-app-region: no-drag;
+}
+#title-buttons button:hover {
+  background: var(--border);
+}
+#btn-close:hover {
+  background: #c00;
+  color: #fff;
+}
+
 /* ===== Editor ===== */
 #editor-panel {
   flex: 1;
@@ -282,7 +324,7 @@ html, body {
 
 #cm-host {
   flex: 1;
-  overflow: hidden;
+  overflow: visible;
 }
 
 #cm-host .cm-editor {
@@ -330,6 +372,34 @@ html, body {
 .action-btn:hover .ic svg,
 .action-btn.active .ic svg {
   stroke: #ffffff;
+}
+
+/* ===== Auto-sync setting item ===== */
+#auto-sync-setting {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 4px;
+}
+#auto-sync-setting input[type="checkbox"] {
+  width: 16px;
+  height: 16px;
+}
+
+/* ===== Sync spinner styling ===== */
+#sync-spinner {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 44px;
+  height: var(--touch);
+  font-family: monospace;
+  font-size: 16px;
+  color: #ffffff;
+  user-select: none;
+}
+#sync-spinner.hidden {
+  display: none;
 }
 
 /* ===== Settings button (bottom left inside sidebar) ===== */
@@ -400,6 +470,17 @@ html, body {
 }
 .setting-label {
   font-size: 13px;
+}
+.setting-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+.setting-actions > span {
+  font-size: 12px;
+  color: var(--muted);
+  margin-right: 6px;
 }
 .setting-btn {
   background: var(--bg);
@@ -543,6 +624,16 @@ html, body {
   font-size: 12px;
   z-index: 9999;
   border-bottom: 1px solid var(--error-fg);
+}
+#error-banner.info {
+  background: #000000;
+  color: #ffffff;
+  border-bottom: 1px solid #ffffff;
+}
+#error-banner.success {
+  background: #000000;
+  color: #00ff00;
+  border-bottom: 1px solid #00ff00;
 }
 #error-banner.hidden {
   display: none;

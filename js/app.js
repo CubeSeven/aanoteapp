@@ -1,5 +1,5 @@
 // ============================================================
-// TUI Notes — Frontend (v4: icons, DnD, reorder, tree UI)
+// aanote — Frontend (v4: icons, DnD, reorder, tree UI)
 // ============================================================
 
 import { createEditor } from "./cm.bundle.js";
@@ -9,10 +9,13 @@ const { invoke } = window.__TAURI__.core;
 const { open } = window.__TAURI__.dialog;
 const { getCurrentWindow } = window.__TAURI__.window;
 
+// ---------- Custom titlebar ----------
+// (wired inside DOMContentLoaded below)
+
 // ---------- Constants ----------
 const MOBILE_BREAKPOINT = 720;
-const COLLAPSE_KEY = "tui-notes-collapsed";
-const SIDEBAR_KEY = "tui-notes-sidebar";
+const COLLAPSE_KEY = "aanote-collapsed";
+const SIDEBAR_KEY = "aanote-sidebar";
 const DRAG_HOLD_MS = 250;
 const DELETE_HOLD_MS = 800; // long-press to delete
 const PREFIX_RE = /^\d{2,3}-/;
@@ -21,7 +24,7 @@ const PREFIX_RE = /^\d{2,3}-/;
 let activeNotePath = null;
 let fileTree = [];
 let isDirty = false;
-let rootPath = localStorage.getItem("tui-notes-root") || null;
+let rootPath = localStorage.getItem("aanote-root") || null;
 let selectedIndex = 0;
 let flatItems = [];
 // searchMode flag removed – spotlights use modal
@@ -29,6 +32,7 @@ let ignoreNextChange = false;
 let sidebarOpen = null;
 let collapsed = new Set(JSON.parse(localStorage.getItem(COLLAPSE_KEY) || "[]"));
 let saveTimeout;
+let isRefreshing = false;
 
 // ---------- DOM ----------
 const fileTreeEl = document.getElementById("file-tree");
@@ -46,6 +50,11 @@ const backdrop = document.getElementById("backdrop");
 const btnSettings = document.getElementById("btn-settings");
 const settingsModal = document.getElementById("settings-modal");
 const btnImportFolder = document.getElementById("btn-import-folder");
+const btnGDriveConnect = document.getElementById("btn-gdrive-connect");
+const btnGDriveSync = document.getElementById("btn-gdrive-sync");
+const gdriveStatusLbl = document.getElementById("gdrive-status");
+const syncSpinner = document.getElementById("sync-spinner");
+const chkAutoSync = document.getElementById("chk-auto-sync");
 
 const searchModal = document.getElementById("search-modal");
 const searchInput = document.getElementById("search-input");
@@ -62,6 +71,40 @@ const view = createEditor(cmHost, () => {
     isDirty = true;
     clearTimeout(saveTimeout);
     saveTimeout = setTimeout(saveNote, 1000);
+  }
+});
+
+function findNodeByName(nodes, name) {
+  for (const n of nodes) {
+    if (!n.is_dir && displayName(n).toLowerCase() === name.toLowerCase()) {
+      return n;
+    }
+    if (n.is_dir && n.children) {
+      const found = findNodeByName(n.children, name);
+      if (found) return found;
+    }
+  }
+  return null;
+}
+
+cmHost.addEventListener("open-wiki-link", async (e) => {
+  const targetName = e.detail.name;
+  const targetNode = findNodeByName(fileTree, targetName);
+  if (targetNode) {
+    openNote(targetNode.path);
+  } else {
+    try {
+      const nameWithExt = targetName.endsWith(".md") ? targetName : `${targetName}.md`;
+      const path = await invoke("create_note", {
+        dirPath: rootPath,
+        name: nameWithExt,
+      });
+      await loadTree();
+      const relPath = path.replace(`${rootPath}/`, "");
+      await openNote(relPath, true);
+    } catch (err) {
+      showError(String(err));
+    }
   }
 });
 
@@ -120,9 +163,51 @@ function initSettingsBtn() {
   btnSettings.innerHTML = iconHTML("settings");
 }
 
+btnImportFolder.addEventListener("click", async () => {
+  settingsModal.classList.add("hidden");
+  await pickDirectory();
+});
+
+// ---------- Google Drive sync ----------
+
+const GDRIVE_CLIENT_ID = "YOUR_GOOGLE_CLIENT_ID";
+const GDRIVE_CLIENT_SECRET = "YOUR_GOOGLE_CLIENT_SECRET";
+
+async function updateGDriveStatus() {
+  if (!gdriveStatusLbl) return;
+  try {
+    const status = await invoke("gdrive_status");
+    const autoSyncEl = document.getElementById("auto-sync-setting");
+    if (status === "connected") {
+      gdriveStatusLbl.textContent = "Connected";
+      if (btnGDriveConnect) {
+        btnGDriveConnect.textContent = "Disconnect";
+        btnGDriveConnect.dataset.mode = "logout";
+      }
+      if (btnGDriveSync) btnGDriveSync.classList.remove("hidden");
+      if (autoSyncEl) autoSyncEl.classList.remove("hidden");
+      if (chkAutoSync) {
+        chkAutoSync.checked = localStorage.getItem("auto-sync-enabled") !== "0";
+      }
+    } else {
+      gdriveStatusLbl.textContent = "Disconnected";
+      if (btnGDriveConnect) {
+        btnGDriveConnect.textContent = "Connect";
+        btnGDriveConnect.dataset.mode = "login";
+      }
+      if (btnGDriveSync) btnGDriveSync.classList.add("hidden");
+      if (autoSyncEl) autoSyncEl.classList.add("hidden");
+    }
+  } catch (e) {
+    gdriveStatusLbl.textContent = "Error";
+    console.error(e);
+  }
+}
+
 btnSettings.addEventListener("click", () => {
   if (settingsModal.classList.contains("hidden")) {
     settingsModal.classList.remove("hidden");
+    updateGDriveStatus();
   } else {
     settingsModal.classList.add("hidden");
   }
@@ -134,9 +219,69 @@ settingsModal.addEventListener("click", (e) => {
   }
 });
 
-btnImportFolder.addEventListener("click", async () => {
-  settingsModal.classList.add("hidden");
-  await pickDirectory();
+// Auto-sync toggle change handler
+if (chkAutoSync) {
+  chkAutoSync.addEventListener("change", () => {
+    localStorage.setItem("auto-sync-enabled", chkAutoSync.checked ? "1" : "0");
+  });
+}
+
+if (btnGDriveConnect) btnGDriveConnect.addEventListener("click", async () => {
+  const mode = btnGDriveConnect.dataset.mode;
+  if (mode === "logout") {
+    try {
+      await invoke("gdrive_logout");
+      await updateGDriveStatus();
+      showError("Disconnected from Google Drive.");
+    } catch (e) {
+      showError(String(e));
+    }
+  } else {
+    btnGDriveConnect.disabled = true;
+    btnGDriveConnect.textContent = "Connecting...";
+    try {
+      await invoke("gdrive_login", {
+        clientId: GDRIVE_CLIENT_ID,
+        clientSecret: GDRIVE_CLIENT_SECRET,
+      });
+      await updateGDriveStatus();
+      showError("Connected to Google Drive.");
+      if (rootPath) {
+        try {
+          const res = await invoke("gdrive_sync", { rootPath });
+          showError(`Initial sync: ${res}`);
+        } catch (e) {
+          console.error(e);
+        }
+      }
+    } catch (e) {
+      showError(String(e));
+    } finally {
+      btnGDriveConnect.disabled = false;
+      await updateGDriveStatus();
+    }
+  }
+});
+
+if (btnGDriveSync) btnGDriveSync.addEventListener("click", async () => {
+  if (!rootPath) {
+    showError("Choose a notes folder first.");
+    return;
+  }
+  btnGDriveSync.disabled = true;
+  const oldText = btnGDriveSync.textContent;
+  btnGDriveSync.textContent = "Syncing...";
+  setSyncSpinner(true);
+  try {
+    const res = await invoke("gdrive_sync", { rootPath });
+    console.log("Sync completed:", res);
+  } catch (e) {
+    showError(String(e));
+  } finally {
+    setSyncSpinner(false);
+    btnGDriveSync.disabled = false;
+    btnGDriveSync.textContent = oldText;
+  }
 });
 
 // ============================================================
@@ -146,7 +291,27 @@ btnImportFolder.addEventListener("click", async () => {
 document.addEventListener("DOMContentLoaded", async () => {
   await loadIcons();
 
+  // --- Custom titlebar controls ---
+  const appWindow = getCurrentWindow();
+  
+  // Drag entire window by clicking titlebar (not on buttons)
+  document.getElementById("titlebar")?.addEventListener("mousedown", (e) => {
+    if (e.target === e.currentTarget || e.target.id === "titlebar") {
+      appWindow.startDragging();
+    }
+  });
+  document.getElementById("titlebar")?.addEventListener("dblclick", () => appWindow.toggleMaximize());
+  
+  // Window control buttons
+  document.getElementById("btn-min")?.addEventListener("click", () => appWindow.minimize());
+  document.getElementById("btn-max")?.addEventListener("click", () => appWindow.toggleMaximize());
+  document.getElementById("btn-close")?.addEventListener("click", async () => {
+    if (isDirty) await saveNote();
+    appWindow.destroy();
+  });
+
   sidebarToggle.innerHTML = iconHTML("panel-left");
+  btnSettings.innerHTML = iconHTML("settings");
   btnNewNote.innerHTML = iconHTML("plus");
   btnNewFolder.innerHTML = iconHTML("folder-plus");
   btnSearch.innerHTML = iconHTML("search");
@@ -155,23 +320,50 @@ document.addEventListener("DOMContentLoaded", async () => {
   initSidebar();
   initSettingsBtn();
 
-  if (!rootPath) await pickDirectory();
-  else await loadTree();
+  if (!rootPath) {
+    await pickDirectory();
+  } else {
+    await loadTree();
+  }
+
+  // Auto-sync in background after UI is ready
+  (async () => {
+    try {
+      const status = await invoke("gdrive_status");
+      if (status === "connected" && rootPath && localStorage.getItem("auto-sync-enabled") !== "0") {
+        setSyncSpinner(true);
+        const res = await invoke("gdrive_sync", { rootPath });
+        setSyncSpinner(false);
+        console.log(`Initial sync: ${res}`);
+      }
+    } catch (e) {
+      console.log("No GDrive connection or sync failed", e);
+      setSyncSpinner(false);
+    }
+  })();
 
   getCurrentWindow().onCloseRequested(async () => {
     if (isDirty) await saveNote();
   });
 
   setInterval(() => {
-    if (searchModal.classList.contains("hidden") && rootPath && settingsModal.classList.contains("hidden")) {
+    if (searchModal.classList.contains("hidden") && rootPath && settingsModal.classList.contains("hidden") && !dragState.active) {
       if (fileTreeEl.querySelector(".tree-input")) return;
       loadTree(true);
     }
   }, 5000);
   window.addEventListener("focus", () => {
-    if (searchModal.classList.contains("hidden") && rootPath && settingsModal.classList.contains("hidden")) {
+    if (searchModal.classList.contains("hidden") && rootPath && settingsModal.classList.contains("hidden") && !dragState.active) {
       if (fileTreeEl.querySelector(".tree-input")) return;
       loadTree(true);
+    }
+  });
+
+  // Ctrl+S / Cmd+S to save
+  document.addEventListener("keydown", (e) => {
+    if ((e.ctrlKey || e.metaKey) && e.key === "s") {
+      e.preventDefault();
+      saveNote(true);
     }
   });
 });
@@ -189,7 +381,7 @@ async function pickDirectory() {
     });
     if (selected) {
       rootPath = selected;
-      localStorage.setItem("tui-notes-root", rootPath);
+      localStorage.setItem("aanote-root", rootPath);
       await loadTree();
     } else {
       fileTreeEl.innerHTML =
@@ -237,11 +429,16 @@ function parentDirOf(path) {
 // ============================================================
 
 async function loadTree(silent = false) {
+  if (isRefreshing) return;
+  isRefreshing = true;
   try {
     fileTree = await invoke("scan_directory", { path: rootPath });
     renderTree();
+    updateSelection(activeNotePath);
   } catch (e) {
     if (!silent) showError(String(e));
+  } finally {
+    isRefreshing = false;
   }
 }
 
@@ -272,10 +469,11 @@ function renderNodes(nodes, container, depth, guideStr) {
     row.setAttribute("draggable", "true");
 
     // Guides (indent lines)
-    if (guideStr) {
+    const fullGuide = guideStr + (isLast ? "└─" : "├─");
+    if (depth > 0) {
       const guides = document.createElement("span");
       guides.className = "tree-guides";
-      guides.textContent = guideStr;
+      guides.textContent = fullGuide;
       row.appendChild(guides);
     }
 
@@ -312,6 +510,7 @@ function renderNodes(nodes, container, depth, guideStr) {
 
     // ---- HTML5 Drag API (mouse) ----
     row.addEventListener("dragstart", (e) => {
+      window.getSelection()?.removeAllRanges();
       if (dragState.holdTimer) clearTimeout(dragState.holdTimer);
       dragState.active = true;
       dragState.wasDragging = true;
@@ -451,6 +650,7 @@ const dragState = {
 };
 
 function beginDrag(e) {
+  window.getSelection()?.removeAllRanges();
   dragState.active = true;
   dragState.wasDragging = true;
   const src = flatItems.find((r) => r.dataset.path === dragState.srcPath);
@@ -499,8 +699,10 @@ function updateDropTarget(x, y) {
   }
 
   // Block dropping folder into itself/descendant
-  if (mode === "into" && dragState.srcIsDir) {
-    if (row.dataset.path.startsWith(dragState.srcPath + "/")) return;
+  if (dragState.srcIsDir) {
+    if (row.dataset.path === dragState.srcPath || row.dataset.path.startsWith(dragState.srcPath + "/")) {
+      return;
+    }
   }
 
   row.classList.add(mode === "into" ? "drop-into" : `drop-${mode}`);
@@ -554,6 +756,9 @@ async function endDrag() {
         newPath: `${rootPath}/${srcName}`,
       });
       if (activeNotePath === srcPath) activeNotePath = srcName;
+      else if (activeNotePath?.startsWith(srcPath + "/")) {
+        activeNotePath = srcName + activeNotePath.slice(srcPath.length);
+      }
     } else if (target.mode === "into") {
       const destDir = target.row.dataset.path;
       const destPath = `${destDir}/${srcName}`;
@@ -563,11 +768,13 @@ async function endDrag() {
         newPath: `${rootPath}/${destPath}`,
       });
       if (activeNotePath === srcPath) activeNotePath = destPath;
+      else if (activeNotePath?.startsWith(srcPath + "/")) {
+        activeNotePath = destPath + activeNotePath.slice(srcPath.length);
+      }
     } else {
       await reorderWithPrefixes(srcPath, srcIsDir, target);
     }
     await loadTree();
-    updateStatus();
   } catch (err) {
     showError(String(err));
   }
@@ -612,6 +819,9 @@ async function reorderWithPrefixes(srcPath, srcIsDir, target) {
       newPath: `${rootPath}/${srcNewRel}`,
     });
     if (activeNotePath === srcPath) activeNotePath = srcNewRel;
+    else if (activeNotePath?.startsWith(srcPath + "/")) {
+      activeNotePath = srcNewRel + activeNotePath.slice(srcPath.length);
+    }
   }
 
   // Two-phase rename to avoid collisions
@@ -634,6 +844,9 @@ async function reorderWithPrefixes(srcPath, srcIsDir, target) {
       activeNotePath === t.tmp.replace(/\.reordering$/, "")
     ) {
       activeNotePath = t.final;
+    } else if (activeNotePath?.startsWith(t.tmp + "/") || activeNotePath?.startsWith(t.tmp.replace(/\.reordering$/, "") + "/")) {
+      const orig = t.tmp.replace(/\.reordering$/, "");
+      activeNotePath = t.final + activeNotePath.slice(orig.length);
     }
   }
 }
@@ -653,12 +866,12 @@ function cleanupDrag() {
     dragState.ghost.remove();
     dragState.ghost = null;
   }
-  fileTreeEl
-    .querySelectorAll(".drag-source")
-    .forEach((el) => el.classList.remove("drag-source"));
+  const src = flatItems.find((r) => r.dataset.path === dragState.srcPath);
+  if (src) src.classList.remove("drag-source");
   clearDropIndicators();
-  fileNav.style.touchAction = "";
   dragState.active = false;
+  dragState.srcPath = null;
+  dragState.srcIsDir = false;
   dragState.currentTarget = null;
   setTimeout(() => (dragState.wasDragging = false), 100);
 }
@@ -801,17 +1014,47 @@ titleInput.addEventListener("change", async () => {
   }
 });
 
-async function saveNote() {
-  if (!activeNotePath || !isDirty) return;
-  try {
-    await invoke("save_note", {
-      path: `${rootPath}/${activeNotePath}`,
-      content: getEditorContent(),
-    });
-    isDirty = false;
-  } catch (e) {
-    showError(String(e));
+let syncDebounceTimer = null;
+async function queueAutoSync(forceNow = false) {
+  if (syncDebounceTimer) clearTimeout(syncDebounceTimer);
+  if (localStorage.getItem("auto-sync-enabled") === "0") return;
+
+  const runSync = async () => {
+    try {
+      const status = await invoke("gdrive_status");
+      if (status === "connected" && rootPath) {
+        setSyncSpinner(true);
+        await invoke("gdrive_sync", { rootPath });
+        setSyncSpinner(false);
+      }
+    } catch (e) {
+      console.error("Auto-sync failed:", e);
+      setSyncSpinner(false);
+    }
+  };
+
+  if (forceNow) {
+    await runSync();
+  } else {
+    syncDebounceTimer = setTimeout(runSync, 15000);
   }
+}
+
+async function saveNote(forceSync = false) {
+  if (!activeNotePath) return;
+  if (isDirty) {
+    try {
+      await invoke("save_note", {
+        path: `${rootPath}/${activeNotePath}`,
+        content: getEditorContent(),
+      });
+      isDirty = false;
+    } catch (e) {
+      showError(String(e));
+      return;
+    }
+  }
+  queueAutoSync(forceSync);
 }
 
 // ============================================================
@@ -1072,11 +1315,36 @@ function updateSelection(path) {
   if (idx >= 0) selectedIndex = idx;
 }
 
-function showError(msg) {
-  errorBanner.textContent = `ERROR: ${msg}`;
+function showBanner(msg, type = "info") {
+  errorBanner.textContent = type === "error" ? `ERROR: ${msg}` : msg;
+  errorBanner.className = ""; // clear all
+  errorBanner.classList.add(type); // add .info, .error, .success
   errorBanner.classList.remove("hidden");
   clearTimeout(errorBanner._t);
   errorBanner._t = setTimeout(() => errorBanner.classList.add("hidden"), 3000);
+}
+
+function showError(msg) {
+  showBanner(msg, "error");
+}
+
+// Show / hide the sync spinner in the action bar.
+let spinnerInterval = null;
+const spinnerChars = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
+function setSyncSpinner(show) {
+  if (!syncSpinner) return;
+  syncSpinner.classList.toggle("hidden", !show);
+  clearInterval(spinnerInterval);
+  if (show) {
+    let i = 0;
+    syncSpinner.textContent = spinnerChars[0];
+    spinnerInterval = setInterval(() => {
+      i = (i + 1) % spinnerChars.length;
+      syncSpinner.textContent = spinnerChars[i];
+    }, 80);
+  } else {
+    syncSpinner.textContent = "";
+  }
 }
 
 // ============================================================

@@ -3,10 +3,17 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>TUI Notes</title>
+  <title>aanote</title>
   <link rel="stylesheet" href="css/style.css" />
 </head>
 <body>
+  <div id="titlebar" data-tauri-drag-region>
+    <div id="title-buttons">
+      <button id="btn-min" title="Minimize">−</button>
+      <button id="btn-max" title="Maximize/Restore">□</button>
+      <button id="btn-close" title="Close">×</button>
+    </div>
+  </div>
   <div id="backdrop"></div>
   <div id="app">
     <aside id="file-navigator" tabindex="0">
@@ -30,6 +37,7 @@
     <button class="action-btn" id="btn-new-note" title="New note (F2)"></button>
     <button class="action-btn" id="btn-new-folder" title="New folder (F3)"></button>
     <button class="action-btn" id="btn-search" title="Search (Ctrl+F)"></button>
+    <span id="sync-spinner" class="hidden"></span>
   </div>
   <div id="search-modal" class="hidden">
     <div id="search-box">
@@ -53,8 +61,16 @@
         <button class="setting-btn active" id="btn-import-folder">Choose Folder</button>
       </div>
       <div class="setting-item">
-        <span class="setting-label">Google Drive File Syncing</span>
-        <button class="setting-btn">Connect (Coming Soon)</button>
+        <span class="setting-label">Google Drive Syncing</span>
+        <div class="setting-actions">
+          <span id="gdrive-status">Checking...</span>
+          <button class="setting-btn" id="btn-gdrive-connect">Connect</button>
+          <button class="setting-btn hidden" id="btn-gdrive-sync">Sync Now</button>
+        </div>
+      </div>
+      <div class="setting-item" id="auto-sync-setting" class="hidden">
+        <span class="setting-label">Auto-Sync on Save</span>
+        <input type="checkbox" id="chk-auto-sync" checked />
       </div>
     </div>
   </div>

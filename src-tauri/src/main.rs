@@ -1,8 +1,10 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 mod fs_commands;
+mod gdrive;
 
 use fs_commands::*;
+use gdrive::*;
 
 fn main() {
     tauri::Builder::default()
@@ -16,6 +18,10 @@ fn main() {
             create_folder,
             search_notes,
             delete_node,
+            gdrive_status,
+            gdrive_login,
+            gdrive_logout,
+            gdrive_sync,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
