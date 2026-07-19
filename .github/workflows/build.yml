@@ -54,8 +54,14 @@ jobs:
         run: mkdir -p dist/js dist/css && cp index.html dist/index.html && cp js/* dist/js/ && cp css/* dist/css/
 
       - name: Build Tauri
-        uses: tauri-apps/tauri-action@v0
+        run: cargo tauri build --target ${{ matrix.target }}
+
+      - name: Upload binary to release
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        with:
-          args: --target ${{ matrix.target }}
+        run: |
+          BIN="src-tauri/target/${{ matrix.target }}/release/aanote${{ matrix.ext }}"
+          if [ ! -f "$BIN" ]; then
+            BIN="src-tauri/target/${{ matrix.target }}/release/bundle/deb/aanote*.deb"
+          fi
+          gh release upload "${{ github.ref_name }}" "$BIN" --clobber
