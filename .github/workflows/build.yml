@@ -23,6 +23,8 @@ jobs:
 
   build:
     needs: release
+    permissions:
+      contents: write
     strategy:
       fail-fast: false
       matrix:
