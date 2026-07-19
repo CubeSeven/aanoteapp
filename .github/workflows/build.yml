@@ -20,27 +20,16 @@ jobs:
           - os: macos-latest
             target: aarch64-apple-darwin
             ext: ""
-          - os: windows-latest
-            target: x86_64-pc-windows-msvc
-            ext: ".exe"
 
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
 
-      - name: Inject GDrive credentials (Unix)
-        if: runner.os != 'Windows'
+      - name: Inject GDrive credentials
         run: |
           cp js/gdrive-config.example.js js/gdrive-config.js
           sed -i.bak "s|YOUR_GOOGLE_CLIENT_ID|${{ secrets.GDRIVE_CLIENT_ID }}|g" js/gdrive-config.js && rm -f js/gdrive-config.js.bak
           sed -i.bak "s|YOUR_GOOGLE_CLIENT_SECRET|${{ secrets.GDRIVE_CLIENT_SECRET }}|g" js/gdrive-config.js && rm -f js/gdrive-config.js.bak
-
-      - name: Inject GDrive credentials (Windows)
-        if: runner.os == 'Windows'
-        run: |
-          copy js\gdrive-config.example.js js\gdrive-config.js
-          powershell -Command "(Get-Content js\gdrive-config.js) -replace 'YOUR_GOOGLE_CLIENT_ID', '${{ secrets.GDRIVE_CLIENT_ID }}' | Set-Content js\gdrive-config.js"
-          powershell -Command "(Get-Content js\gdrive-config.js) -replace 'YOUR_GOOGLE_CLIENT_SECRET', '${{ secrets.GDRIVE_CLIENT_SECRET }}' | Set-Content js\gdrive-config.js"
 
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
