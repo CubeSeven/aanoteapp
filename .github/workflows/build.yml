@@ -82,9 +82,12 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           BIN="src-tauri/target/${{ matrix.target }}/release/aanote${{ matrix.ext }}"
+          SUFFIX="${{ matrix.target }}"
           if [ ! -f "$BIN" ]; then
             BIN=$(ls src-tauri/target/${{ matrix.target }}/release/bundle/deb/aanote*.deb 2>/dev/null || true)
+            SUFFIX="Linux"
           fi
           if [ -n "$BIN" ] && [ -f "$BIN" ]; then
-            gh release upload "${{ github.ref_name }}" "$BIN" --clobber
+            cp "$BIN" "aanote-${SUFFIX}"
+            gh release upload "${{ github.ref_name }}" "aanote-${SUFFIX}" --clobber
           fi
