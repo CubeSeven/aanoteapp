@@ -36,6 +36,9 @@ jobs:
         with:
           targets: ${{ matrix.target }}
 
+      - name: Install cargo-tauri
+        run: cargo install tauri-cli --version "^2"
+
       - name: Install system deps (Linux)
         if: runner.os == 'Linux'
         run: |
@@ -62,6 +65,8 @@ jobs:
         run: |
           BIN="src-tauri/target/${{ matrix.target }}/release/aanote${{ matrix.ext }}"
           if [ ! -f "$BIN" ]; then
-            BIN="src-tauri/target/${{ matrix.target }}/release/bundle/deb/aanote*.deb"
+            BIN=$(ls src-tauri/target/${{ matrix.target }}/release/bundle/deb/aanote*.deb 2>/dev/null || true)
           fi
-          gh release upload "${{ github.ref_name }}" "$BIN" --clobber
+          if [ -n "$BIN" ] && [ -f "$BIN" ]; then
+            gh release upload "${{ github.ref_name }}" "$BIN" --clobber
+          fi
