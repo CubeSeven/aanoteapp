@@ -30,7 +30,7 @@
   },
   "bundle": {
     "active": true,
-    "targets": ["deb"],
+    "targets": ["deb", "dmg"],
     "icon": [
       "icons/icon.png"
     ]
