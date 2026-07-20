@@ -5,26 +5,11 @@ on:
     tags: ["v*"]
   workflow_dispatch:
 
-jobs:
-  release:
-    runs-on: ubuntu-latest
-    permissions:
-      contents: write
-    steps:
-      - uses: actions/checkout@v4
-      - name: Create release
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          gh release create "${{ github.ref_name }}" \
-            --title "${{ github.ref_name }}" \
-            --notes "Download the binary for your platform below." \
-            --target "${{ github.sha }}"
+permissions:
+  contents: write
 
+jobs:
   build:
-    needs: release
-    permissions:
-      contents: write
     strategy:
       fail-fast: false
       matrix:
@@ -39,19 +24,12 @@ jobs:
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/cache@v4
-        with:
-          path: |
-            src-tauri/target
-          key: ${{ runner.os }}-${{ matrix.target }}-tauri-${{ hashFiles('src-tauri/Cargo.lock') }}
-          restore-keys: |
-            ${{ runner.os }}-${{ matrix.target }}-tauri-
 
       - name: Inject GDrive credentials
         run: |
           cp js/gdrive-config.example.js js/gdrive-config.js
           sed -i.bak 's|export const GDRIVE_CLIENT_ID *= *"YOUR_GOOGLE_CLIENT_ID"|export const GDRIVE_CLIENT_ID="${{ secrets.GDRIVE_CLIENT_ID }}"|' js/gdrive-config.js && rm -f js/gdrive-config.js.bak
-          sed -i.bak 's|export const GDRIVE_CLIENT_SECRET *= *"YOUR_GOOGLE_CLIENT_SECRET"|export const GDRIVE_CLIENT_SECRET="${{ secrets.GDRIVE_CLIENT_SECRET }}"|' js/gdrive-config.js && rm -f js/gdrive-config.js.bak
+          sed -i.bak 's|export const GDRIVE_CLIENT_SECRET *= *"YOUR_GOOGLE_CLIENT_SECRET"|export const GDRIVE_CLIENT_SECRET=*** secrets.GDRIVE_CLIENT_SECRET }}"|' js/gdrive-config.js && rm -f js/gdrive-config.js.bak
 
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
@@ -75,33 +53,13 @@ jobs:
       - name: Prepare dist
         run: mkdir -p dist/js dist/css && cp index.html dist/index.html && cp js/* dist/js/ && cp css/* dist/css/
 
-      - name: Build Tauri
-        run: cargo tauri build --target ${{ matrix.target }}
-
-      - name: Upload to release
+      - uses: tauri-apps/tauri-action@v0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          echo "=== Checking for built files ==="
-          find src-tauri/target -name "*.dmg" -o -name "*.deb" 2>/dev/null || true
-          ls -la src-tauri/target/${{ matrix.target }}/release/bundle/ 2>/dev/null || echo "no bundle dir"
-
-          if [ "${{ runner.os }}" = "macOS" ]; then
-            DMG=$(ls src-tauri/target/${{ matrix.target }}/release/bundle/dmg/*.dmg 2>/dev/null || true)
-            if [ -n "$DMG" ] && [ -f "$DMG" ]; then
-              cp "$DMG" "aanote-${{ matrix.target }}.dmg"
-              gh release upload "${{ github.ref_name }}" "aanote-${{ matrix.target }}.dmg" --clobber
-            else
-              echo "ERROR: No DMG found for ${{ matrix.target }}"
-              exit 1
-            fi
-          else
-            BIN="src-tauri/target/${{ matrix.target }}/release/aanote"
-            if [ -f "$BIN" ]; then
-              cp "$BIN" "aanote-x86_64-unknown-linux-gnu"
-              gh release upload "${{ github.ref_name }}" "aanote-x86_64-unknown-linux-gnu" --clobber
-            else
-              echo "ERROR: No binary built for ${{ matrix.target }}"
-              exit 1
-            fi
-          fi
+        with:
+          tagName: ${{ github.ref_name }}
+          releaseName: "v__VERSION__"
+          releaseBody: "aanote desktop app — sign in with Google, sync with Drive."
+          releaseDraft: false
+          prerelease: false
+          args: --target ${{ matrix.target }}
