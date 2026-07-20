@@ -28,8 +28,8 @@ jobs:
       - name: Inject GDrive credentials
         run: |
           cp js/gdrive-config.example.js js/gdrive-config.js
-          sed -i.bak 's|export const GDRIVE_CLIENT_ID *= *"YOUR_GOOGLE_CLIENT_ID"|export const GDRIVE_CLIENT_ID="${{ secrets.GDRIVE_CLIENT_ID }}"|' js/gdrive-config.js && rm -f js/gdrive-config.js.bak
-          sed -i.bak 's|export const GDRIVE_CLIENT_SECRET *= *"YOUR_GOOGLE_CLIENT_SECRET"|export const GDRIVE_CLIENT_SECRET=*** secrets.GDRIVE_CLIENT_SECRET }}"|' js/gdrive-config.js && rm -f js/gdrive-config.js.bak
+          sed -i.bak "s|YOUR_GOOGLE_CLIENT_ID|${{ secrets.GDRIVE_CLIENT_ID }}|g" js/gdrive-config.js && rm -f js/gdrive-config.js.bak
+          sed -i.bak "s|YOUR_GOOGLE_CLIENT_SECRET|${{ secrets.GDRIVE_CLIENT_SECRET }}|g" js/gdrive-config.js && rm -f js/gdrive-config.js.bak
 
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
@@ -53,13 +53,31 @@ jobs:
       - name: Prepare dist
         run: mkdir -p dist/js dist/css && cp index.html dist/index.html && cp js/* dist/js/ && cp css/* dist/css/
 
-      - uses: tauri-apps/tauri-action@v0
+      - name: Build Tauri
+        run: cargo tauri build --target ${{ matrix.target }}
+
+      - name: Upload DMG
+        if: runner.os == 'macOS'
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        with:
-          tagName: ${{ github.ref_name }}
-          releaseName: "v__VERSION__"
-          releaseBody: "aanote desktop app — sign in with Google, sync with Drive."
-          releaseDraft: false
-          prerelease: false
-          args: --target ${{ matrix.target }}
+        run: |
+          DMG=$(ls src-tauri/target/${{ matrix.target }}/release/bundle/dmg/*.dmg 2>/dev/null || true)
+          if [ -n "$DMG" ] && [ -f "$DMG" ]; then
+            cp "$DMG" "aanote-${{ matrix.target }}.dmg"
+            gh release upload "${{ github.ref_name }}" "aanote-${{ matrix.target }}.dmg" --clobber
+          else
+            echo "ERROR: No DMG found"; exit 1
+          fi
+
+      - name: Upload Linux binary
+        if: runner.os == 'Linux'
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          BIN="src-tauri/target/${{ matrix.target }}/release/aanote"
+          if [ -f "$BIN" ]; then
+            cp "$BIN" "aanote-x86_64-unknown-linux-gnu"
+            gh release upload "${{ github.ref_name }}" "aanote-x86_64-unknown-linux-gnu" --clobber
+          else
+            echo "ERROR: No binary"; exit 1
+          fi
