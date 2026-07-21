@@ -31,15 +31,17 @@ struct TokenResponse {
     refresh_token: Option<String>,
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, Debug)]
+#[serde(rename_all = "camelCase")]
 struct DriveFile {
     id: String,
     name: String,
-    modifiedTime: String,
-    mimeType: String,
+    modified_time: Option<String>,
+    mime_type: Option<String>,
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, Debug)]
+#[serde(rename_all = "camelCase")]
 struct DriveFileList {
     files: Vec<DriveFile>,
 }
@@ -247,7 +249,7 @@ pub async fn gdrive_sync(root_path: String) -> Result<String, String> {
             }
             // Case 2: Exists on remote but not locally indexed
             (None, Some(df)) => {
-                let remote_mtime = parse_rfc3339_to_ms(&df.modifiedTime);
+                let remote_mtime = parse_rfc3339_to_ms(df.modified_time.as_deref().unwrap_or(""));
                 if *local_mtime > remote_mtime {
                     // Local is newer: overwrite remote
                     update_file(&client, &token, &root_path, rel_path, &df.id).await?;
@@ -288,7 +290,7 @@ pub async fn gdrive_sync(root_path: String) -> Result<String, String> {
             // Case 4: Exists in both index and remote
             (Some(mut se), Some(df)) => {
                 processed_remote_ids.insert(df.id.clone());
-                let remote_mtime = parse_rfc3339_to_ms(&df.modifiedTime);
+                let remote_mtime = parse_rfc3339_to_ms(df.modified_time.as_deref().unwrap_or(""));
                 
                 let local_changed = *local_mtime != se.local_mtime_ms;
                 let remote_changed = remote_mtime != se.remote_mtime_ms;
@@ -337,13 +339,15 @@ pub async fn gdrive_sync(root_path: String) -> Result<String, String> {
         if processed_remote_ids.contains(&df.id) {
             continue;
         }
-        if df.mimeType == "application/vnd.google-apps.folder" {
-            continue;
+        if let Some(ref mime) = df.mime_type {
+            if mime == "application/vnd.google-apps.folder" {
+                continue;
+            }
         }
         // Exists only on remote. Download it.
         download_file(&client, &token, &root_path, &df.name, &df.id).await?;
         let actual_mtime = get_file_mtime(&Path::new(&root_path).join(&df.name)).unwrap_or_default();
-        let remote_mtime = parse_rfc3339_to_ms(&df.modifiedTime);
+        let remote_mtime = parse_rfc3339_to_ms(df.modified_time.as_deref().unwrap_or(""));
         sync_meta.files.insert(
             df.name.clone(),
             SyncFileEntry {
@@ -553,14 +557,17 @@ async fn get_remote_mtime(client: &reqwest::Client, token: &str, file_id: &str) 
         .await
         .map_err(|e| e.to_string())?;
     if !res.status().is_success() {
-        return Err(format!("Get remote mtime failed: {}", res.status()));
+        let status = res.status();
+        let err_text = res.text().await.unwrap_or_default();
+        return Err(format!("Drive API error (get_remote_mtime) {}: {}", status, err_text));
     }
     #[derive(Deserialize)]
+    #[serde(rename_all = "camelCase")]
     struct MtimeResp {
-        modifiedTime: String,
+        modified_time: Option<String>,
     }
     let resp: MtimeResp = res.json().await.map_err(|e| e.to_string())?;
-    Ok(parse_rfc3339_to_ms(&resp.modifiedTime))
+    Ok(parse_rfc3339_to_ms(resp.modified_time.as_deref().unwrap_or("")))
 }
 
 async fn delete_remote_file(client: &reqwest::Client, token: &str, file_id: &str) -> Result<(), String> {
