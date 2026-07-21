@@ -249,6 +249,7 @@ if (btnGDriveConnect) btnGDriveConnect.addEventListener("click", async () => {
       if (rootPath) {
         try {
           const res = await invoke("gdrive_sync", { rootPath });
+          await loadTree(true);
           showError(`Initial sync: ${res}`);
         } catch (e) {
           console.error(e);
@@ -275,6 +276,7 @@ if (btnGDriveSync) btnGDriveSync.addEventListener("click", async () => {
   try {
     const res = await invoke("gdrive_sync", { rootPath });
     console.log("Sync completed:", res);
+    await loadTree(true);
   } catch (e) {
     showError(String(e));
   } finally {
@@ -333,6 +335,7 @@ document.addEventListener("DOMContentLoaded", async () => {
       if (status === "connected" && rootPath && localStorage.getItem("auto-sync-enabled") !== "0") {
         setSyncSpinner(true);
         const res = await invoke("gdrive_sync", { rootPath });
+        await loadTree(true);
         setSyncSpinner(false);
         console.log(`Initial sync: ${res}`);
       }
@@ -1025,6 +1028,7 @@ async function queueAutoSync(forceNow = false) {
       if (status === "connected" && rootPath) {
         setSyncSpinner(true);
         await invoke("gdrive_sync", { rootPath });
+        await loadTree(true);
         setSyncSpinner(false);
       }
     } catch (e) {
