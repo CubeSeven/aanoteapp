@@ -215,6 +215,42 @@ pub async fn gdrive_sync(root_path: String) -> Result<String, String> {
         }
     };
 
+    // Deduplicate remote files (clean up Google Drive)
+    let mut unique_drive_files: HashMap<String, DriveFile> = HashMap::new();
+    let mut duplicates_to_delete = Vec::new();
+
+    for df in drive_files {
+        let name = df.name.clone();
+        if let Some(existing) = unique_drive_files.get(&name) {
+            let local_mapped_id = sync_meta.files.get(&name).map(|se| &se.id);
+            let keep_existing = if local_mapped_id == Some(&existing.id) {
+                true
+            } else if local_mapped_id == Some(&df.id) {
+                false
+            } else {
+                let existing_mtime = parse_rfc3339_to_ms(existing.modified_time.as_deref().unwrap_or(""));
+                let current_mtime = parse_rfc3339_to_ms(df.modified_time.as_deref().unwrap_or(""));
+                existing_mtime >= current_mtime
+            };
+
+            if keep_existing {
+                duplicates_to_delete.push(df.id.clone());
+            } else {
+                if let Some(old) = unique_drive_files.insert(name, df) {
+                    duplicates_to_delete.push(old.id);
+                }
+            }
+        } else {
+            unique_drive_files.insert(name, df);
+        }
+    }
+
+    for dup_id in duplicates_to_delete {
+        let _ = delete_remote_file(&client, &token, &dup_id).await;
+    }
+
+    let drive_files: Vec<DriveFile> = unique_drive_files.into_values().collect();
+
     // 4. Scan local directory for all markdown files and directories
     let local_files = scan_local_dir(&root_path)?;
 
@@ -229,8 +265,13 @@ pub async fn gdrive_sync(root_path: String) -> Result<String, String> {
     for (rel_path, local_mtime) in &local_files {
         let entry = sync_meta.files.get(rel_path).cloned();
         
-        // Find if this file already exists in remote files (e.g. by name match)
-        let remote_file = drive_files.iter().find(|df| df.name == *rel_path);
+        // Find if this file already exists in remote files (try ID first, fallback to name)
+        let remote_file = if let Some(ref se) = entry {
+            drive_files.iter().find(|df| df.id == se.id)
+                .or_else(|| drive_files.iter().find(|df| df.name == *rel_path))
+        } else {
+            drive_files.iter().find(|df| df.name == *rel_path)
+        };
 
         match (entry, remote_file) {
             // Case 1: Brand new file (neither locally indexed nor remote)
