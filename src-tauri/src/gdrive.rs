@@ -393,6 +393,12 @@ async fn get_or_create_app_folder(client: &reqwest::Client, token: &str) -> Resu
         .await
         .map_err(|e| e.to_string())?;
 
+    if !res.status().is_success() {
+        let status = res.status();
+        let err_text = res.text().await.unwrap_or_default();
+        return Err(format!("Drive API error (get_or_create_app_folder) {}: {}", status, err_text));
+    }
+
     let list: DriveFileList = res.json().await.map_err(|e| e.to_string())?;
     if let Some(folder) = list.files.first() {
         return Ok(folder.id.clone());
@@ -435,6 +441,12 @@ async fn list_drive_files(client: &reqwest::Client, token: &str, parent_id: &str
         .send()
         .await
         .map_err(|e| e.to_string())?;
+
+    if !res.status().is_success() {
+        let status = res.status();
+        let err_text = res.text().await.unwrap_or_default();
+        return Err(format!("Drive API error (list_drive_files) {}: {}", status, err_text));
+    }
 
     let list: DriveFileList = res.json().await.map_err(|e| e.to_string())?;
     Ok(list.files)
