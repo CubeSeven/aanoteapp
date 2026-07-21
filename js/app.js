@@ -355,10 +355,32 @@ document.addEventListener("DOMContentLoaded", async () => {
       loadTree(true);
     }
   }, 5000);
+
+  // Background sync every 5 minutes to pull remote changes
+  setInterval(async () => {
+    if (!rootPath) return;
+    if (localStorage.getItem("auto-sync-enabled") === "0") return;
+    try {
+      const status = await invoke("gdrive_status");
+      if (status === "connected") {
+        queueAutoSync(true);
+      }
+    } catch (e) {
+      // Silent fail
+    }
+  }, 300000);
   window.addEventListener("focus", () => {
     if (searchModal.classList.contains("hidden") && rootPath && settingsModal.classList.contains("hidden") && !dragState.active) {
       if (fileTreeEl.querySelector(".tree-input")) return;
       loadTree(true);
+    }
+    // Auto-sync on window focus
+    if (rootPath && localStorage.getItem("auto-sync-enabled") !== "0") {
+      invoke("gdrive_status").then((status) => {
+        if (status === "connected") {
+          queueAutoSync(true);
+        }
+      }).catch(() => {});
     }
   });
 
