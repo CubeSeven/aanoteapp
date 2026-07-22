@@ -23,6 +23,7 @@ fn main() {
             gdrive_logout,
             gdrive_sync,
             gdrive_reset_sync,
+            open_external_url,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

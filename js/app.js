@@ -111,6 +111,15 @@ cmHost.addEventListener("open-wiki-link", async (e) => {
   }
 });
 
+cmHost.addEventListener("open-external-link", async (e) => {
+  const url = e.detail.url;
+  try {
+    await invoke("open_external_url", { url });
+  } catch (err) {
+    showError(String(err));
+  }
+});
+
 function setEditorContent(text) {
   ignoreNextChange = true;
   view.dispatch({

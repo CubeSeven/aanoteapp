@@ -26674,6 +26674,44 @@ var wikiLinkPlugin = ViewPlugin.fromClass(
   },
   { decorations: (v) => v.decorations }
 );
+var EmptyWidget = class extends WidgetType {
+  toDOM() {
+    return document.createElement("span");
+  }
+};
+function markdownLinkDeco(view) {
+  const ranges = [];
+  const sel = view.state.selection.main;
+  const re = /\[([^\]]+)\]\(([^)]+)\)/g;
+  const doc2 = view.state.doc;
+  for (let i2 = 1; i2 <= doc2.lines; i2++) {
+    const line = doc2.line(i2);
+    let m;
+    while ((m = re.exec(line.text)) !== null) {
+      const start = line.from + m.index;
+      const textStart = start + 1;
+      const textEnd = textStart + m[1].length;
+      const end = start + m[0].length;
+      if (sel.from <= end && sel.to >= start) continue;
+      ranges.push(Decoration.replace({ widget: new EmptyWidget() }).range(start, textStart));
+      ranges.push(Decoration.mark({ class: "cm-tui-link", attributes: { title: m[2] } }).range(textStart, textEnd));
+      ranges.push(Decoration.replace({ widget: new EmptyWidget() }).range(textEnd, end));
+    }
+  }
+  ranges.sort((a, b) => a.from - b.from || a.to - b.to);
+  return Decoration.set(ranges);
+}
+var markdownLinkPlugin = ViewPlugin.fromClass(
+  class {
+    constructor(view) {
+      this.decorations = markdownLinkDeco(view);
+    }
+    update(u) {
+      this.decorations = markdownLinkDeco(u.view);
+    }
+  },
+  { decorations: (v) => v.decorations }
+);
 var CheckboxWidget = class extends WidgetType {
   constructor(checked) {
     super();
@@ -26831,6 +26869,12 @@ var tuiTheme = EditorView.theme(
     ".cm-tui-checkbox.checked": {
       opacity: 0.5
     },
+    // markdown links (preview)
+    ".cm-tui-link": {
+      color: "var(--fg)",
+      textDecoration: "underline",
+      cursor: "pointer"
+    },
     // autocomplete tooltip (TUI styled)
     ".cm-tooltip-autocomplete": {
       border: "1px solid var(--fg) !important",
@@ -26873,6 +26917,23 @@ function wikiLinkClickHandler(view, pos) {
   }
   return null;
 }
+function markdownLinkClickHandler(view, pos) {
+  const doc2 = view.state.doc;
+  const re = /\[([^\]]+)\]\(([^)]+)\)/g;
+  for (let i2 = 1; i2 <= doc2.lines; i2++) {
+    const line = doc2.line(i2);
+    if (pos < line.from || pos > line.to) continue;
+    let m;
+    while ((m = re.exec(line.text)) !== null) {
+      const from = line.from + m.index;
+      const to = from + m[0].length;
+      if (pos >= from && pos <= to) {
+        return m[2];
+      }
+    }
+  }
+  return null;
+}
 function attachWikiLinkHandler(view) {
   view.dom.addEventListener("click", (e) => {
     const target = e.target;
@@ -26885,6 +26946,15 @@ function attachWikiLinkHandler(view) {
       e.stopPropagation();
       view.dom.dispatchEvent(
         new CustomEvent("open-wiki-link", { detail: { name: name2 } })
+      );
+      return;
+    }
+    const url = markdownLinkClickHandler(view, pos);
+    if (url) {
+      e.preventDefault();
+      e.stopPropagation();
+      view.dom.dispatchEvent(
+        new CustomEvent("open-external-link", { detail: { url } })
       );
     }
   });
@@ -26907,6 +26977,7 @@ function createEditor(parent, onDocChange) {
         syntaxHighlighting(tuiHighlight),
         markdownStyling,
         wikiLinkPlugin,
+        markdownLinkPlugin,
         checkboxPlugin,
         autocompletion({ override: [slashCompletionSource] }),
         tuiTheme,
