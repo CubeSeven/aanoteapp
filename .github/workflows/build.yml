@@ -9,7 +9,30 @@ permissions:
   contents: write
 
 jobs:
+  release:
+    runs-on: ubuntu-latest
+    outputs:
+      uploaded: ${{ steps.upload.outputs.uploaded }}
+    steps:
+      - name: Create or update release
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          if gh release view "${{ github.ref_name }}" >/dev/null 2>&1; then
+            echo "Release ${{ github.ref_name }} already exists. Updating to published."
+            gh release edit "${{ github.ref_name }}" --draft=false
+          else
+            echo "Creating release ${{ github.ref_name }} as published."
+            gh release create "${{ github.ref_name }}" \
+              --title "${{ github.ref_name }}" \
+              --notes "Download the binary for your platform below." \
+              --draft=false
+          fi
+      - id: upload
+        run: echo "uploaded=true" >> $GITHUB_OUTPUT
+
   build:
+    needs: release
     strategy:
       fail-fast: false
       matrix:
