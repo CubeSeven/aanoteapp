@@ -695,17 +695,23 @@ html, body {
   display: none;
 }
 
-/* ===== Scrollbars ===== */
-::-webkit-scrollbar {
-  width: 8px;
-  height: 8px;
+/* ===== Scrollbars (hidden — keep functionality) ===== */
+#file-navigator,
+#file-tree,
+#editor-panel,
+#cm-host .cm-scroller {
+  scrollbar-width: none !important;          /* Firefox */
 }
-::-webkit-scrollbar-track {
-  background: var(--bg);
-}
-::-webkit-scrollbar-thumb {
-  background: var(--border);
-  border: 1px solid var(--bg);
+#file-navigator::-webkit-scrollbar,
+#file-navigator *::-webkit-scrollbar,
+#file-tree::-webkit-scrollbar,
+#file-tree *::-webkit-scrollbar,
+#editor-panel::-webkit-scrollbar,
+#editor-panel *::-webkit-scrollbar,
+#cm-host .cm-scroller::-webkit-scrollbar {
+  width: 0 !important;                       /* WebKit */
+  height: 0 !important;
+  display: none !important;
 }
 
 /* ============================================================

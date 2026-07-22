@@ -256,16 +256,19 @@ function wikiLinkDeco(view) {
   const ranges = [];
   const re = /\[\[([^\]]+)\]\]/g;
   const doc = view.state.doc;
-  for (let i = 1; i <= doc.lines; i++) {
-    const line = doc.line(i);
-    let m;
-    while ((m = re.exec(line.text)) !== null) {
-      const from = line.from + m.index;
-      const to = from + m[0].length;
-      const sel = view.state.selection.main;
-      // Don't hide link while cursor is inside it
-      if (sel.from <= to && sel.to >= from) continue;
-      ranges.push(wikiLinkMark.range(from, to));
+  for (let { from, to } of view.visibleRanges) {
+    const startLine = doc.lineAt(from).number;
+    const endLine = doc.lineAt(to).number;
+    for (let i = startLine; i <= endLine; i++) {
+      const line = doc.line(i);
+      let m;
+      while ((m = re.exec(line.text)) !== null) {
+        const fromPos = line.from + m.index;
+        const toPos = fromPos + m[0].length;
+        const sel = view.state.selection.main;
+        if (sel.from <= toPos && sel.to >= fromPos) continue;
+        ranges.push(wikiLinkMark.range(fromPos, toPos));
+      }
     }
   }
   return Decoration.set(ranges);
@@ -290,18 +293,22 @@ function markdownLinkDeco(view) {
   const sel = view.state.selection.main;
   const re = /\[([^\]]+)\]\(([^)]+)\)/g;
   const doc = view.state.doc;
-  for (let i = 1; i <= doc.lines; i++) {
-    const line = doc.line(i);
-    let m;
-    while ((m = re.exec(line.text)) !== null) {
-      const start = line.from + m.index;
-      const textStart = start + 1;
-      const textEnd = textStart + m[1].length;
-      const end = start + m[0].length;
-      if (sel.from <= end && sel.to >= start) continue;
-      ranges.push(Decoration.replace({ widget: new EmptyWidget() }).range(start, textStart));
-      ranges.push(Decoration.mark({ class: "cm-tui-link", attributes: { title: m[2] } }).range(textStart, textEnd));
-      ranges.push(Decoration.replace({ widget: new EmptyWidget() }).range(textEnd, end));
+  for (let { from, to } of view.visibleRanges) {
+    const startLine = doc.lineAt(from).number;
+    const endLine = doc.lineAt(to).number;
+    for (let i = startLine; i <= endLine; i++) {
+      const line = doc.line(i);
+      let m;
+      while ((m = re.exec(line.text)) !== null) {
+        const start = line.from + m.index;
+        const textStart = start + 1;
+        const textEnd = textStart + m[1].length;
+        const end = start + m[0].length;
+        if (sel.from <= end && sel.to >= start) continue;
+        ranges.push(Decoration.replace({ widget: new EmptyWidget() }).range(start, textStart));
+        ranges.push(Decoration.mark({ class: "cm-tui-link", attributes: { title: m[2] } }).range(textStart, textEnd));
+        ranges.push(Decoration.replace({ widget: new EmptyWidget() }).range(textEnd, end));
+      }
     }
   }
   ranges.sort((a, b) => a.from - b.from || a.to - b.to);
@@ -362,15 +369,19 @@ class CheckboxWidget extends WidgetType {
 function checkboxDeco(view) {
   const ranges = [];
   const doc = view.state.doc;
-  for (let i = 1; i <= doc.lines; i++) {
-    const line = doc.line(i);
-    const m = /^(- )?\[( |x)\]/.exec(line.text);
-    if (!m || m.index > 0) continue;
-    const from = line.from + m.index;
-    const to = from + m[0].length;
-    ranges.push(
-      Decoration.replace({ widget: new CheckboxWidget(m[2] === "x") }).range(from, to)
-    );
+  for (let { from, to } of view.visibleRanges) {
+    const startLine = doc.lineAt(from).number;
+    const endLine = doc.lineAt(to).number;
+    for (let i = startLine; i <= endLine; i++) {
+      const line = doc.line(i);
+      const m = /^(- )?\[( |x)\]/.exec(line.text);
+      if (!m || m.index > 0) continue;
+      const fromPos = line.from + m.index;
+      const toPos = fromPos + m[0].length;
+      ranges.push(
+        Decoration.replace({ widget: new CheckboxWidget(m[2] === "x") }).range(fromPos, toPos)
+      );
+    }
   }
   return Decoration.set(ranges);
 }
