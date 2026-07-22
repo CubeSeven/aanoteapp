@@ -611,29 +611,40 @@ html, body {
   font-size: 13px;
 }
 
-/* ===== Error banner ===== */
+/* ===== Error banner (Monochrome Notification Toast) ===== */
 #error-banner {
   position: fixed;
-  top: 0;
-  left: 0;
-  right: 0;
-  background: var(--error-bg);
-  color: var(--error-fg);
-  padding: 4px 8px;
+  bottom: 58px;
+  left: 50%;
+  transform: translateX(-50%);
+  background: var(--bg);
+  color: var(--fg);
+  border: 1px solid var(--fg);
+  padding: 6px 12px;
   font-family: var(--font);
   font-size: 12px;
   z-index: 9999;
-  border-bottom: 1px solid var(--error-fg);
+  text-align: center;
+  min-width: 176px;
+  max-width: 320px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 #error-banner.info {
-  background: #000000;
-  color: #ffffff;
-  border-bottom: 1px solid #ffffff;
+  background: var(--bg);
+  color: var(--fg);
+  border: 1px solid var(--fg);
 }
 #error-banner.success {
-  background: #000000;
-  color: #00ff00;
-  border-bottom: 1px solid #00ff00;
+  background: var(--bg);
+  color: var(--fg);
+  border: 1px solid var(--fg);
+}
+#error-banner.error {
+  background: var(--fg);
+  color: var(--bg);
+  border: 1px solid var(--fg);
 }
 #error-banner.hidden {
   display: none;
