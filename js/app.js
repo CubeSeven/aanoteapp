@@ -307,8 +307,6 @@ if (btnGDriveReset) btnGDriveReset.addEventListener("click", async () => {
     return;
   }
   btnGDriveReset.disabled = true;
-  const oldText = btnGDriveReset.textContent;
-  btnGDriveReset.textContent = "Resetting...";
   try {
     const res = await invoke("gdrive_reset_sync", { rootPath });
     showError(res);
@@ -317,7 +315,6 @@ if (btnGDriveReset) btnGDriveReset.addEventListener("click", async () => {
     showError(String(e));
   } finally {
     btnGDriveReset.disabled = false;
-    btnGDriveReset.textContent = oldText;
   }
 });
 

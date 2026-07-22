@@ -11,6 +11,10 @@
   animation: none !important;
 }
 
+.hidden {
+  display: none !important;
+}
+
 :root {
   --bg: #ffffff;
   --fg: #000000;
