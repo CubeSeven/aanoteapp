@@ -53,6 +53,7 @@ const settingsModal = document.getElementById("settings-modal");
 const btnImportFolder = document.getElementById("btn-import-folder");
 const btnGDriveConnect = document.getElementById("btn-gdrive-connect");
 const btnGDriveSync = document.getElementById("btn-gdrive-sync");
+const btnGDriveReset = document.getElementById("btn-gdrive-reset");
 const gdriveStatusLbl = document.getElementById("gdrive-status");
 const syncSpinner = document.getElementById("sync-spinner");
 const chkAutoSync = document.getElementById("chk-auto-sync");
@@ -185,6 +186,7 @@ async function updateGDriveStatus() {
         btnGDriveConnect.dataset.mode = "logout";
       }
       if (btnGDriveSync) btnGDriveSync.classList.remove("hidden");
+      if (btnGDriveReset) btnGDriveReset.classList.remove("hidden");
       if (autoSyncEl) autoSyncEl.classList.remove("hidden");
       if (chkAutoSync) {
         chkAutoSync.checked = localStorage.getItem("auto-sync-enabled") !== "0";
@@ -196,6 +198,7 @@ async function updateGDriveStatus() {
         btnGDriveConnect.dataset.mode = "login";
       }
       if (btnGDriveSync) btnGDriveSync.classList.add("hidden");
+      if (btnGDriveReset) btnGDriveReset.classList.add("hidden");
       if (autoSyncEl) autoSyncEl.classList.add("hidden");
     }
   } catch (e) {
@@ -283,6 +286,26 @@ if (btnGDriveSync) btnGDriveSync.addEventListener("click", async () => {
     setSyncSpinner(false);
     btnGDriveSync.disabled = false;
     btnGDriveSync.textContent = oldText;
+  }
+});
+
+if (btnGDriveReset) btnGDriveReset.addEventListener("click", async () => {
+  if (!rootPath) {
+    showError("Choose a notes folder first.");
+    return;
+  }
+  btnGDriveReset.disabled = true;
+  const oldText = btnGDriveReset.textContent;
+  btnGDriveReset.textContent = "Resetting...";
+  try {
+    const res = await invoke("gdrive_reset_sync", { rootPath });
+    showError(res);
+    await loadTree(true);
+  } catch (e) {
+    showError(String(e));
+  } finally {
+    btnGDriveReset.disabled = false;
+    btnGDriveReset.textContent = oldText;
   }
 });
 

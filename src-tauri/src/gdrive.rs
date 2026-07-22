@@ -80,6 +80,29 @@ pub async fn gdrive_logout() -> Result<(), String> {
 }
 
 #[tauri::command]
+pub async fn gdrive_reset_sync(root_path: String) -> Result<String, String> {
+    // 1. Delete local .sync.json
+    let sync_meta_path = Path::new(&root_path).join(".sync.json");
+    if sync_meta_path.exists() {
+        fs::remove_file(&sync_meta_path).map_err(|e| e.to_string())?;
+    }
+
+    // 2. Delete all files in the Google Drive "aanote" folder
+    let token = get_access_token().await?;
+    let client = reqwest::Client::new();
+    let root_folder_id = get_or_create_app_folder(&client, &token).await?;
+    let drive_files = list_drive_files(&client, &token, &root_folder_id).await?;
+
+    let mut deleted = 0;
+    for df in &drive_files {
+        let _ = delete_remote_file(&client, &token, &df.id).await;
+        deleted += 1;
+    }
+
+    Ok(format!("Reset sync: deleted local index and {} remote files", deleted))
+}
+
+#[tauri::command]
 pub async fn gdrive_login(client_id: String, client_secret: String) -> Result<(), String> {
     // Start TCP listener on random port
     let listener = TcpListener::bind("127.0.0.1:0").map_err(|e| e.to_string())?;
