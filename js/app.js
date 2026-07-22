@@ -164,6 +164,8 @@ backdrop.addEventListener("click", () => applySidebar(false));
 
 function initSettingsBtn() {
   btnSettings.innerHTML = iconHTML("settings");
+  if (btnGDriveSync) btnGDriveSync.innerHTML = iconHTML("refresh-cw");
+  if (btnGDriveReset) btnGDriveReset.innerHTML = iconHTML("trash-2");
 }
 
 btnImportFolder.addEventListener("click", async () => {
@@ -179,7 +181,6 @@ async function updateGDriveStatus() {
   if (!gdriveStatusLbl) return;
   try {
     const status = await invoke("gdrive_status");
-    const gdriveConnectedActions = document.getElementById("gdrive-connected-actions");
     const autoSyncEl = document.getElementById("auto-sync-setting");
     if (status === "connected") {
       gdriveStatusLbl.textContent = "Connected";
@@ -188,7 +189,7 @@ async function updateGDriveStatus() {
         btnGDriveConnect.dataset.mode = "logout";
       }
       if (btnGDriveSync) btnGDriveSync.classList.remove("hidden");
-      if (gdriveConnectedActions) gdriveConnectedActions.classList.remove("hidden");
+      if (btnGDriveReset) btnGDriveReset.classList.remove("hidden");
       if (autoSyncEl) autoSyncEl.classList.remove("hidden");
       if (chkAutoSync) {
         chkAutoSync.checked = localStorage.getItem("auto-sync-enabled") !== "0";
@@ -200,7 +201,7 @@ async function updateGDriveStatus() {
         btnGDriveConnect.dataset.mode = "login";
       }
       if (btnGDriveSync) btnGDriveSync.classList.add("hidden");
-      if (gdriveConnectedActions) gdriveConnectedActions.classList.add("hidden");
+      if (btnGDriveReset) btnGDriveReset.classList.add("hidden");
       if (autoSyncEl) autoSyncEl.classList.add("hidden");
     }
   } catch (e) {
