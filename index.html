@@ -56,20 +56,28 @@
   <div id="settings-modal" class="hidden">
     <div id="settings-box">
       <div id="settings-header">Settings</div>
+
       <div class="setting-item">
         <span class="setting-label">Local Notes Directory</span>
         <button class="setting-btn active" id="btn-import-folder">Choose Folder</button>
       </div>
-      <div class="setting-item">
+
+      <div class="setting-item" id="gdrive-item">
         <span class="setting-label">Google Drive Syncing</span>
         <div class="setting-actions">
           <span id="gdrive-status">Checking...</span>
           <button class="setting-btn" id="btn-gdrive-connect">Connect</button>
-          <button class="setting-btn hidden" id="btn-gdrive-sync">Sync Now</button>
-          <button class="setting-btn hidden" id="btn-gdrive-reset">Reset Sync</button>
         </div>
       </div>
-      <div class="setting-item" id="auto-sync-setting" class="hidden">
+
+      <div class="setting-item hidden" id="gdrive-connected-actions">
+        <div class="setting-actions">
+          <button class="setting-btn" id="btn-gdrive-sync">Sync Now</button>
+          <button class="setting-btn" id="btn-gdrive-reset">Reset Sync</button>
+        </div>
+      </div>
+
+      <div class="setting-item hidden" id="auto-sync-setting">
         <span class="setting-label">Auto-Sync on Save</span>
         <input type="checkbox" id="chk-auto-sync" checked />
       </div>
