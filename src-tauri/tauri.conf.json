@@ -6,7 +6,7 @@
   "build": {
     "beforeDevCommand": "python3 -m http.server 1420 --directory dist",
     "devUrl": "http://localhost:1420",
-    "beforeBuildCommand": "",
+    "beforeBuildCommand": "mkdir -p dist/js dist/css && cp index.html dist/index.html && cp -r js/. dist/js/ && cp -r css/. dist/css/",
     "frontendDist": "../dist"
   },
   "app": {
