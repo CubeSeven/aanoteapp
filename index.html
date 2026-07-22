@@ -57,23 +57,28 @@
     <div id="settings-box">
       <div id="settings-header">Settings</div>
 
-      <div class="setting-item">
+      <div class="setting-item" id="local-dir-item">
         <span class="setting-label">Local Notes Directory</span>
-        <button class="setting-btn active" id="btn-import-folder">Choose Folder</button>
+        <div class="setting-actions">
+          <span id="local-dir-path" class="text-muted text-small" style="max-width: 150px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">Not selected</span>
+          <button class="setting-btn active" id="btn-import-folder" title="Choose Folder">...</button>
+        </div>
       </div>
 
       <div class="setting-item" id="gdrive-item">
-        <span class="setting-label">Google Drive Syncing</span>
+        <span class="setting-label">Google Drive Sync</span>
         <div class="setting-actions">
-          <span id="gdrive-status">Checking...</span>
+          <span id="gdrive-status" class="text-muted text-small">Checking...</span>
           <button class="setting-btn" id="btn-gdrive-connect">Connect</button>
+          <button class="setting-btn hidden" id="btn-gdrive-sync" title="Sync Now" style="padding: 0 8px;">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21.5 2v6h-6M21.34 15.57a10 10 0 1 1-.59-10.36l5.67-5.67"/></svg>
+          </button>
         </div>
       </div>
 
       <div class="setting-item hidden" id="gdrive-connected-actions">
-        <div class="setting-actions">
-          <button class="setting-btn" id="btn-gdrive-sync">Sync Now</button>
-          <button class="setting-btn" id="btn-gdrive-reset">Reset Sync</button>
+        <div class="setting-actions" style="width: 100%; justify-content: flex-end;">
+          <button class="setting-btn-link" id="btn-gdrive-reset">Reset Sync</button>
         </div>
       </div>
 

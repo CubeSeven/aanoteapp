@@ -382,8 +382,29 @@ html, body {
   margin-top: 4px;
 }
 #auto-sync-setting input[type="checkbox"] {
+  -webkit-appearance: none;
+  appearance: none;
   width: 16px;
   height: 16px;
+  border: 1px solid var(--fg);
+  border-radius: 2px;
+  background: var(--bg);
+  position: relative;
+  cursor: pointer;
+  margin: 0;
+}
+#auto-sync-setting input[type="checkbox"]:checked {
+  background: var(--fg);
+}
+#auto-sync-setting input[type="checkbox"]:checked::before {
+  content: "✓";
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  color: var(--bg);
+  font-size: 12px;
+  line-height: 1;
 }
 
 /* ===== Sync spinner styling ===== */
@@ -470,6 +491,26 @@ html, body {
 }
 .setting-label {
   font-size: 13px;
+}
+.text-muted {
+  color: var(--muted) !important;
+}
+.text-small {
+  font-size: 11px !important;
+}
+.setting-btn-link {
+  background: transparent;
+  color: var(--muted);
+  border: none;
+  padding: 6px 8px;
+  font-family: var(--font);
+  font-size: 11px;
+  cursor: pointer;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+.setting-btn-link:hover {
+  color: var(--fg);
 }
 .setting-actions {
   display: flex;

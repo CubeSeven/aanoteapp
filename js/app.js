@@ -51,6 +51,7 @@ const backdrop = document.getElementById("backdrop");
 const btnSettings = document.getElementById("btn-settings");
 const settingsModal = document.getElementById("settings-modal");
 const btnImportFolder = document.getElementById("btn-import-folder");
+const localDirPath = document.getElementById("local-dir-path");
 const btnGDriveConnect = document.getElementById("btn-gdrive-connect");
 const btnGDriveSync = document.getElementById("btn-gdrive-sync");
 const btnGDriveReset = document.getElementById("btn-gdrive-reset");
@@ -186,6 +187,7 @@ async function updateGDriveStatus() {
         btnGDriveConnect.textContent = "Disconnect";
         btnGDriveConnect.dataset.mode = "logout";
       }
+      if (btnGDriveSync) btnGDriveSync.classList.remove("hidden");
       if (gdriveConnectedActions) gdriveConnectedActions.classList.remove("hidden");
       if (autoSyncEl) autoSyncEl.classList.remove("hidden");
       if (chkAutoSync) {
@@ -197,6 +199,7 @@ async function updateGDriveStatus() {
         btnGDriveConnect.textContent = "Connect";
         btnGDriveConnect.dataset.mode = "login";
       }
+      if (btnGDriveSync) btnGDriveSync.classList.add("hidden");
       if (gdriveConnectedActions) gdriveConnectedActions.classList.add("hidden");
       if (autoSyncEl) autoSyncEl.classList.add("hidden");
     }
@@ -206,10 +209,22 @@ async function updateGDriveStatus() {
   }
 }
 
+function updateLocalDirPath() {
+  if (!localDirPath) return;
+  if (rootPath) {
+    localDirPath.textContent = rootPath;
+    localDirPath.title = rootPath;
+  } else {
+    localDirPath.textContent = "Not selected";
+    localDirPath.title = "";
+  }
+}
+
 btnSettings.addEventListener("click", () => {
   if (settingsModal.classList.contains("hidden")) {
     settingsModal.classList.remove("hidden");
     updateGDriveStatus();
+    updateLocalDirPath();
   } else {
     settingsModal.classList.add("hidden");
   }
@@ -272,8 +287,6 @@ if (btnGDriveSync) btnGDriveSync.addEventListener("click", async () => {
     return;
   }
   btnGDriveSync.disabled = true;
-  const oldText = btnGDriveSync.textContent;
-  btnGDriveSync.textContent = "Syncing...";
   setSyncSpinner(true);
   try {
     const res = await invoke("gdrive_sync", { rootPath });
@@ -284,7 +297,6 @@ if (btnGDriveSync) btnGDriveSync.addEventListener("click", async () => {
   } finally {
     setSyncSpinner(false);
     btnGDriveSync.disabled = false;
-    btnGDriveSync.textContent = oldText;
   }
 });
 
@@ -314,6 +326,7 @@ if (btnGDriveReset) btnGDriveReset.addEventListener("click", async () => {
 
 document.addEventListener("DOMContentLoaded", async () => {
   await loadIcons();
+  updateLocalDirPath();
 
   // --- Custom titlebar controls ---
   const appWindow = getCurrentWindow();
@@ -430,6 +443,7 @@ async function pickDirectory() {
       rootPath = selected;
       localStorage.setItem("aanote-root", rootPath);
       await loadTree();
+      updateLocalDirPath();
     } else {
       fileTreeEl.innerHTML =
         '<div class="tree-empty">// select a directory to begin</div>';
