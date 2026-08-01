@@ -5,6 +5,17 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>aanote</title>
   <link rel="stylesheet" href="css/style.css" />
+  <script>
+    // Apply the saved theme BEFORE first paint to avoid a flash of the default.
+    // The theme itself is defined in CSS via [data-theme="..."]; this just sets
+    // the attribute early. Must run synchronously in <head>.
+    (function () {
+      try {
+        var t = localStorage.getItem("aanote-theme") || "paper";
+        document.documentElement.setAttribute("data-theme", t);
+      } catch (e) {}
+    })();
+  </script>
 </head>
 <body>
   <div id="titlebar" data-tauri-drag-region>
@@ -33,11 +44,17 @@
     </main>
   </div>
   <div id="action-bar">
-    <button class="action-btn" id="sidebar-toggle" title="Toggle panel (Ctrl+\)"></button>
-    <button class="action-btn" id="btn-new-note" title="New note (F2)"></button>
-    <button class="action-btn" id="btn-new-folder" title="New folder (F3)"></button>
-    <button class="action-btn" id="btn-search" title="Search (Ctrl+F)"></button>
-    <span id="sync-spinner" class="hidden"></span>
+    <div id="action-bar-icons">
+      <button class="action-btn" id="sidebar-toggle" title="Toggle panel (Ctrl+\)"></button>
+      <span class="action-sep" aria-hidden="true"></span>
+      <button class="action-btn" id="btn-new-note" title="New note (F2)"></button>
+      <button class="action-btn" id="btn-new-folder" title="New folder (F3)"></button>
+      <button class="action-btn" id="btn-search" title="Search (Ctrl+F)"></button>
+    </div>
+    <div id="sync-status" class="hidden">
+      <span class="sync-status-icon"></span>
+      <span class="sync-status-text"></span>
+    </div>
   </div>
   <div id="search-modal" class="hidden">
     <div id="search-box">
@@ -49,6 +66,7 @@
     </div>
   </div>
   <div id="context-menu" class="hidden">
+    <div class="context-item" id="ctx-pin">Pin / Unpin</div>
     <div class="context-item" id="ctx-rename">Rename (F4)</div>
     <div class="context-item" id="ctx-delete">Delete (Del)</div>
   </div>
@@ -78,6 +96,11 @@
       <div class="setting-item hidden" id="auto-sync-setting">
         <span class="setting-label">Auto-Sync on Save</span>
         <input type="checkbox" id="chk-auto-sync" checked />
+      </div>
+
+      <div class="setting-item" id="theme-item" style="flex-direction: column; align-items: stretch; gap: 10px;">
+        <span class="setting-label">Theme</span>
+        <div id="theme-swatches"></div>
       </div>
     </div>
   </div>

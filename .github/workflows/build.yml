@@ -77,8 +77,8 @@ jobs:
       - name: Install npm deps
         run: npm install
 
-      - name: Prepare dist
-        run: mkdir -p dist/js dist/css && cp index.html dist/index.html && cp -r js/. dist/js/ && cp -r css/. dist/css/
+      - name: Build editor bundle + prepare dist
+        run: npm run build:bundle && mkdir -p dist/js dist/css && cp index.html dist/index.html && cp -r js/. dist/js/ && cp -r css/. dist/css/
 
       - name: Build Tauri
         run: cargo tauri build --target ${{ matrix.target }}

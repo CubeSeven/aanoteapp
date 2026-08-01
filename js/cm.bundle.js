@@ -26475,34 +26475,28 @@ function toggleLine(view, prefix) {
   });
 }
 var fmtKeymap = keymap.of([
-  { key: "Mod-b", run: () => {
-    const v = document.querySelector(".cm-content")?.cmView;
-    if (v) wrapSelection(v, "**", "**");
+  { key: "Mod-b", run: (v) => {
+    wrapSelection(v, "**", "**");
     return true;
   } },
-  { key: "Mod-i", run: () => {
-    const v = document.querySelector(".cm-content")?.cmView;
-    if (v) wrapSelection(v, "*", "*");
+  { key: "Mod-i", run: (v) => {
+    wrapSelection(v, "*", "*");
     return true;
   } },
-  { key: "Mod-k", run: () => {
-    const v = document.querySelector(".cm-content")?.cmView;
-    if (v) wrapSelection(v, "[", "](url)");
+  { key: "Mod-k", run: (v) => {
+    wrapSelection(v, "[", "](url)");
     return true;
   } },
-  { key: "Mod-`", run: () => {
-    const v = document.querySelector(".cm-content")?.cmView;
-    if (v) wrapSelection(v, "`", "`");
+  { key: "Mod-`", run: (v) => {
+    wrapSelection(v, "`", "`");
     return true;
   } },
-  { key: "Mod-]", run: () => {
-    const v = document.querySelector(".cm-content")?.cmView;
-    if (v) toggleLine(v, "  ");
+  { key: "Mod-]", run: (v) => {
+    toggleLine(v, "  ");
     return true;
   } },
-  { key: "Mod-[", run: () => {
-    const v = document.querySelector(".cm-content")?.cmView;
-    if (v) toggleLine(v, "  ");
+  { key: "Mod-[", run: (v) => {
+    toggleLine(v, "  ");
     return true;
   } }
 ]);
@@ -26637,7 +26631,9 @@ var markdownStyling = ViewPlugin.fromClass(
       this.decorations = hideMarks(view);
     }
     update(u) {
-      this.decorations = hideMarks(u.view);
+      if (u.docChanged || u.viewportChanged || u.selectionSet) {
+        this.decorations = hideMarks(u.view);
+      }
     }
   },
   { decorations: (v) => v.decorations }
@@ -26673,7 +26669,9 @@ var wikiLinkPlugin = ViewPlugin.fromClass(
       this.decorations = wikiLinkDeco(view);
     }
     update(u) {
-      this.decorations = wikiLinkDeco(u.view);
+      if (u.docChanged || u.viewportChanged || u.selectionSet) {
+        this.decorations = wikiLinkDeco(u.view);
+      }
     }
   },
   { decorations: (v) => v.decorations }
@@ -26715,7 +26713,9 @@ var markdownLinkPlugin = ViewPlugin.fromClass(
       this.decorations = markdownLinkDeco(view);
     }
     update(u) {
-      this.decorations = markdownLinkDeco(u.view);
+      if (u.docChanged || u.viewportChanged || u.selectionSet) {
+        this.decorations = markdownLinkDeco(u.view);
+      }
     }
   },
   { decorations: (v) => v.decorations }
@@ -26787,7 +26787,9 @@ var checkboxPlugin = ViewPlugin.fromClass(
       this.decorations = checkboxDeco(view);
     }
     update(u) {
-      this.decorations = checkboxDeco(u.view);
+      if (u.docChanged || u.viewportChanged) {
+        this.decorations = checkboxDeco(u.view);
+      }
     }
   },
   { decorations: (v) => v.decorations }
@@ -26854,6 +26856,8 @@ var tuiTheme = EditorView.theme(
     ".cm-gutters": { display: "none" },
     // no gutters
     ".cm-activeLine": { backgroundColor: "transparent" },
+    // Soft gray selection instead of harsh black (Tier 3).
+    "&.cm-focused .cm-selectionBackground, .cm-selectionBackground, ::selection": { backgroundColor: "var(--border-2)" },
     // hidden marks collapse visually
     ".cm-tui-hidden": { fontSize: "0", color: "transparent" },
     ".cm-tui-heading": { fontWeight: "bold" },
@@ -26914,34 +26918,28 @@ var tuiTheme = EditorView.theme(
 );
 function wikiLinkClickHandler(view, pos) {
   const doc2 = view.state.doc;
+  const line = doc2.lineAt(pos);
   const re = /\[\[([^\]]+)\]\]/g;
-  for (let i2 = 1; i2 <= doc2.lines; i2++) {
-    const line = doc2.line(i2);
-    if (pos < line.from || pos > line.to) continue;
-    let m;
-    while ((m = re.exec(line.text)) !== null) {
-      const from = line.from + m.index;
-      const to = from + m[0].length;
-      if (pos >= from && pos <= to) {
-        return m[1];
-      }
+  let m;
+  while ((m = re.exec(line.text)) !== null) {
+    const from = line.from + m.index;
+    const to = from + m[0].length;
+    if (pos >= from && pos <= to) {
+      return m[1];
     }
   }
   return null;
 }
 function markdownLinkClickHandler(view, pos) {
   const doc2 = view.state.doc;
+  const line = doc2.lineAt(pos);
   const re = /\[([^\]]+)\]\(([^)]+)\)/g;
-  for (let i2 = 1; i2 <= doc2.lines; i2++) {
-    const line = doc2.line(i2);
-    if (pos < line.from || pos > line.to) continue;
-    let m;
-    while ((m = re.exec(line.text)) !== null) {
-      const from = line.from + m.index;
-      const to = from + m[0].length;
-      if (pos >= from && pos <= to) {
-        return m[2];
-      }
+  let m;
+  while ((m = re.exec(line.text)) !== null) {
+    const from = line.from + m.index;
+    const to = from + m[0].length;
+    if (pos >= from && pos <= to) {
+      return m[2];
     }
   }
   return null;

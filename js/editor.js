@@ -74,13 +74,16 @@ function toggleLine(view, prefix) {
   });
 }
 
+// Formatting keymap. Each `run` handler receives the active CodeMirror view as
+// its argument, so we avoid both the DOM lookup (P12) and the TDZ of closing
+// over `view` before it's assigned.
 const fmtKeymap = keymap.of([
-  { key: "Mod-b", run: () => { const v = document.querySelector(".cm-content")?.cmView; if (v) wrapSelection(v, "**", "**"); return true; } },
-  { key: "Mod-i", run: () => { const v = document.querySelector(".cm-content")?.cmView; if (v) wrapSelection(v, "*", "*"); return true; } },
-  { key: "Mod-k", run: () => { const v = document.querySelector(".cm-content")?.cmView; if (v) wrapSelection(v, "[", "](url)"); return true; } },
-  { key: "Mod-`", run: () => { const v = document.querySelector(".cm-content")?.cmView; if (v) wrapSelection(v, "`", "`"); return true; } },
-  { key: "Mod-]", run: () => { const v = document.querySelector(".cm-content")?.cmView; if (v) toggleLine(v, "  "); return true; } },
-  { key: "Mod-[", run: () => { const v = document.querySelector(".cm-content")?.cmView; if (v) toggleLine(v, "  "); return true; } },
+  { key: "Mod-b", run: (v) => { wrapSelection(v, "**", "**"); return true; } },
+  { key: "Mod-i", run: (v) => { wrapSelection(v, "*", "*"); return true; } },
+  { key: "Mod-k", run: (v) => { wrapSelection(v, "[", "](url)"); return true; } },
+  { key: "Mod-`", run: (v) => { wrapSelection(v, "`", "`"); return true; } },
+  { key: "Mod-]", run: (v) => { toggleLine(v, "  "); return true; } },
+  { key: "Mod-[", run: (v) => { toggleLine(v, "  "); return true; } },
 ]);
 
 // ---------- list continuation (smart Enter) ----------
@@ -239,7 +242,11 @@ const markdownStyling = ViewPlugin.fromClass(
       this.decorations = hideMarks(view);
     }
     update(u) {
-      this.decorations = hideMarks(u.view);
+      // Only recompute when the doc, viewport, or selection actually changed.
+      // Selection matters here because we hide/show marks around the cursor.
+      if (u.docChanged || u.viewportChanged || u.selectionSet) {
+        this.decorations = hideMarks(u.view);
+      }
     }
   },
   { decorations: (v) => v.decorations }
@@ -277,7 +284,12 @@ function wikiLinkDeco(view) {
 const wikiLinkPlugin = ViewPlugin.fromClass(
   class {
     constructor(view) { this.decorations = wikiLinkDeco(view); }
-    update(u) { this.decorations = wikiLinkDeco(u.view); }
+    update(u) {
+      // Selection-dependent (hide link while cursor is inside) + viewport.
+      if (u.docChanged || u.viewportChanged || u.selectionSet) {
+        this.decorations = wikiLinkDeco(u.view);
+      }
+    }
   },
   { decorations: (v) => v.decorations }
 );
@@ -318,7 +330,11 @@ function markdownLinkDeco(view) {
 const markdownLinkPlugin = ViewPlugin.fromClass(
   class {
     constructor(view) { this.decorations = markdownLinkDeco(view); }
-    update(u) { this.decorations = markdownLinkDeco(u.view); }
+    update(u) {
+      if (u.docChanged || u.viewportChanged || u.selectionSet) {
+        this.decorations = markdownLinkDeco(u.view);
+      }
+    }
   },
   { decorations: (v) => v.decorations }
 );
@@ -389,7 +405,12 @@ function checkboxDeco(view) {
 const checkboxPlugin = ViewPlugin.fromClass(
   class {
     constructor(view) { this.decorations = checkboxDeco(view); }
-    update(u) { this.decorations = checkboxDeco(u.view); }
+    update(u) {
+      // Checkboxes only change when the doc text changes (toggling rewrites the line).
+      if (u.docChanged || u.viewportChanged) {
+        this.decorations = checkboxDeco(u.view);
+      }
+    }
   },
   { decorations: (v) => v.decorations }
 );
@@ -463,6 +484,9 @@ const tuiTheme = EditorView.theme(
     },
     ".cm-gutters": { display: "none" }, // no gutters
     ".cm-activeLine": { backgroundColor: "transparent" },
+    // Soft gray selection instead of harsh black (Tier 3).
+    "&.cm-focused .cm-selectionBackground, .cm-selectionBackground, ::selection":
+      { backgroundColor: "var(--border-2)" },
     // hidden marks collapse visually
     ".cm-tui-hidden": { fontSize: "0", color: "transparent" },
     ".cm-tui-heading": { fontWeight: "bold" },
@@ -526,17 +550,15 @@ const tuiTheme = EditorView.theme(
 
 function wikiLinkClickHandler(view, pos) {
   const doc = view.state.doc;
+  // Only inspect the single line the click landed on (P7: was O(doc) per click).
+  const line = doc.lineAt(pos);
   const re = /\[\[([^\]]+)\]\]/g;
-  for (let i = 1; i <= doc.lines; i++) {
-    const line = doc.line(i);
-    if (pos < line.from || pos > line.to) continue;
-    let m;
-    while ((m = re.exec(line.text)) !== null) {
-      const from = line.from + m.index;
-      const to = from + m[0].length;
-      if (pos >= from && pos <= to) {
-        return m[1]; // inner name
-      }
+  let m;
+  while ((m = re.exec(line.text)) !== null) {
+    const from = line.from + m.index;
+    const to = from + m[0].length;
+    if (pos >= from && pos <= to) {
+      return m[1]; // inner name
     }
   }
   return null;
@@ -544,17 +566,14 @@ function wikiLinkClickHandler(view, pos) {
 
 function markdownLinkClickHandler(view, pos) {
   const doc = view.state.doc;
+  const line = doc.lineAt(pos);
   const re = /\[([^\]]+)\]\(([^)]+)\)/g;
-  for (let i = 1; i <= doc.lines; i++) {
-    const line = doc.line(i);
-    if (pos < line.from || pos > line.to) continue;
-    let m;
-    while ((m = re.exec(line.text)) !== null) {
-      const from = line.from + m.index;
-      const to = from + m[0].length;
-      if (pos >= from && pos <= to) {
-        return m[2]; // url
-      }
+  let m;
+  while ((m = re.exec(line.text)) !== null) {
+    const from = line.from + m.index;
+    const to = from + m[0].length;
+    if (pos >= from && pos <= to) {
+      return m[2]; // url
     }
   }
   return null;

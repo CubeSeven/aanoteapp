@@ -17,13 +17,56 @@ const { getCurrentWindow } = window.__TAURI__.window;
 const MOBILE_BREAKPOINT = 720;
 const COLLAPSE_KEY = "aanote-collapsed";
 const SIDEBAR_KEY = "aanote-sidebar";
+const PINNED_KEY = "aanote-pinned";
+const RECENT_KEY = "aanote-recent";
+const THEME_KEY = "aanote-theme";
 const DRAG_HOLD_MS = 250;
 const DELETE_HOLD_MS = 800; // long-press to delete
 const PREFIX_RE = /^\d{2,3}-/;
+const MAX_RECENT = 8;
+
+// ---------- Themes ----------
+// fg/bg here are used ONLY to render the swatch preview (CSS owns the actual
+// ramp via [data-theme="..."]). Keep these in sync with css/style.css.
+const THEMES = [
+  { id: "paper",  label: "Aa", fg: "#1536ff", bg: "#dddfde" },
+  { id: "light",  label: "Aa", fg: "#111111", bg: "#ffffff" },
+  { id: "dark",   label: "Aa", fg: "#e8e8e8", bg: "#1a1a1a" },
+  { id: "sepia",  label: "Aa", fg: "#3a2f1f", bg: "#f1e6c8" },
+];
+let activeTheme = localStorage.getItem(THEME_KEY) || "paper";
+
+function applyTheme(id) {
+  activeTheme = id;
+  document.documentElement.setAttribute("data-theme", id);
+  localStorage.setItem(THEME_KEY, id);
+  // Update swatch active states without a full re-render.
+  document.querySelectorAll(".theme-swatch").forEach((el) => {
+    el.classList.toggle("active", el.dataset.theme === id);
+  });
+}
+
+function renderThemeSwatches() {
+  const container = document.getElementById("theme-swatches");
+  if (!container) return;
+  container.innerHTML = "";
+  for (const t of THEMES) {
+    const sw = document.createElement("div");
+    sw.className = "theme-swatch" + (t.id === activeTheme ? " active" : "");
+    sw.dataset.theme = t.id;
+    sw.title = t.id;
+    sw.style.background = t.bg;
+    sw.style.color = t.fg;
+    sw.textContent = t.label;
+    sw.addEventListener("click", () => applyTheme(t.id));
+    container.appendChild(sw);
+  }
+}
 
 // ---------- State ----------
 let activeNotePath = null;
 let fileTree = [];
+let prevTreeSignature = ""; // P1: skip rebuild when unchanged
 let isDirty = false;
 let rootPath = localStorage.getItem("aanote-root") || null;
 let selectedIndex = 0;
@@ -34,6 +77,10 @@ let sidebarOpen = null;
 let collapsed = new Set(JSON.parse(localStorage.getItem(COLLAPSE_KEY) || "[]"));
 let saveTimeout;
 let isRefreshing = false;
+let activeNoteMtime = null; // C3: track disk mtime to detect external changes
+let pinned = new Set(JSON.parse(localStorage.getItem(PINNED_KEY) || "[]"));
+let recent = JSON.parse(localStorage.getItem(RECENT_KEY) || "[]");
+let lastDeleted = null; // {trashPath, path} for undo (Feature 2)
 
 // ---------- DOM ----------
 const fileTreeEl = document.getElementById("file-tree");
@@ -56,7 +103,11 @@ const btnGDriveConnect = document.getElementById("btn-gdrive-connect");
 const btnGDriveSync = document.getElementById("btn-gdrive-sync");
 const btnGDriveReset = document.getElementById("btn-gdrive-reset");
 const gdriveStatusLbl = document.getElementById("gdrive-status");
-const syncSpinner = document.getElementById("sync-spinner");
+const actionBar = document.getElementById("action-bar");
+const syncStatus = document.getElementById("sync-status");
+const syncStatusIcon = document.querySelector("#sync-status .sync-status-icon");
+const syncStatusText = document.querySelector("#sync-status .sync-status-text");
+let syncStatusTimer = null;
 const chkAutoSync = document.getElementById("chk-auto-sync");
 
 const searchModal = document.getElementById("search-modal");
@@ -67,6 +118,7 @@ const searchIconPlaceholder = document.getElementById("search-icon-placeholder")
 const contextMenu = document.getElementById("context-menu");
 const ctxRename = document.getElementById("ctx-rename");
 const ctxDelete = document.getElementById("ctx-delete");
+const ctxPin = document.getElementById("ctx-pin");
 
 // ---------- Editor ----------
 const view = createEditor(cmHost, () => {
@@ -143,6 +195,9 @@ function isMobile() {
 function applySidebar(open) {
   sidebarOpen = open;
   fileNav.classList.toggle("hidden", !open);
+  // Mirror open/closed state onto the toggle button so CSS can show an
+  // active indicator (e.g. a dot under the icon).
+  sidebarToggle.classList.toggle("active", open);
   if (isMobile()) backdrop.classList.toggle("visible", open);
   else backdrop.classList.remove("visible");
   localStorage.setItem(SIDEBAR_KEY, open ? "1" : "0");
@@ -160,12 +215,18 @@ function initSidebar() {
   applySidebar(localStorage.getItem(SIDEBAR_KEY) !== "0");
 }
 
+// P9: debounce resize so we don't write localStorage dozens of times per
+// second during a window-edge drag.
+let resizeTimer = null;
 window.addEventListener("resize", () => {
-  if (isMobile() && sidebarOpen && !backdrop.classList.contains("visible")) {
-    applySidebar(false);
-  } else if (!isMobile() && !sidebarOpen) {
-    if (localStorage.getItem(SIDEBAR_KEY) !== "0") applySidebar(true);
-  }
+  if (resizeTimer) clearTimeout(resizeTimer);
+  resizeTimer = setTimeout(() => {
+    if (isMobile() && sidebarOpen && !backdrop.classList.contains("visible")) {
+      applySidebar(false);
+    } else if (!isMobile() && !sidebarOpen) {
+      if (localStorage.getItem(SIDEBAR_KEY) !== "0") applySidebar(true);
+    }
+  }, 120);
 });
 
 sidebarToggle.addEventListener("click", toggleSidebar);
@@ -235,6 +296,7 @@ btnSettings.addEventListener("click", () => {
     settingsModal.classList.remove("hidden");
     updateGDriveStatus();
     updateLocalDirPath();
+    renderThemeSwatches();
   } else {
     settingsModal.classList.add("hidden");
   }
@@ -275,11 +337,14 @@ if (btnGDriveConnect) btnGDriveConnect.addEventListener("click", async () => {
       showError("Connected to Google Drive.");
       if (rootPath) {
         try {
+          setSyncStatus("syncing");
           const res = await invoke("gdrive_sync", { rootPath });
           await loadTree(true);
-          showError(`Initial sync: ${res}`);
+          await reloadActiveIfChanged();
+          setSyncStatus("synced", res);
         } catch (e) {
           console.error(e);
+          setSyncStatus("error");
         }
       }
     } catch (e) {
@@ -297,15 +362,16 @@ if (btnGDriveSync) btnGDriveSync.addEventListener("click", async () => {
     return;
   }
   btnGDriveSync.disabled = true;
-  setSyncSpinner(true);
+  setSyncStatus("syncing");
   try {
     const res = await invoke("gdrive_sync", { rootPath });
     console.log("Sync completed:", res);
     await loadTree(true);
+    setSyncStatus("synced", res);
   } catch (e) {
     showError(String(e));
+    setSyncStatus("error");
   } finally {
-    setSyncSpinner(false);
     btnGDriveSync.disabled = false;
   }
 });
@@ -375,15 +441,18 @@ document.addEventListener("DOMContentLoaded", async () => {
     try {
       const status = await invoke("gdrive_status");
       if (status === "connected" && rootPath && localStorage.getItem("auto-sync-enabled") !== "0") {
-        setSyncSpinner(true);
+        setSyncStatus("syncing");
         const res = await invoke("gdrive_sync", { rootPath });
         await loadTree(true);
-        setSyncSpinner(false);
+        await reloadActiveIfChanged();
+        setSyncStatus("synced", res);
         console.log(`Initial sync: ${res}`);
+      } else if (status === "disconnected") {
+        // Don't nag on startup; just stay quiet.
       }
     } catch (e) {
       console.log("No GDrive connection or sync failed", e);
-      setSyncSpinner(false);
+      setSyncStatus("error");
     }
   })();
 
@@ -426,13 +495,8 @@ document.addEventListener("DOMContentLoaded", async () => {
     }
   });
 
-  // Ctrl+S / Cmd+S to save
-  document.addEventListener("keydown", (e) => {
-    if ((e.ctrlKey || e.metaKey) && e.key === "s") {
-      e.preventDefault();
-      saveNote(true);
-    }
-  });
+  // Ctrl+S handled by the global keydown listener below (single handler —
+  // previously registered twice, causing double syncs).
 });
 
 // ============================================================
@@ -500,14 +564,181 @@ async function loadTree(silent = false) {
   if (isRefreshing) return;
   isRefreshing = true;
   try {
-    fileTree = await invoke("scan_directory", { path: rootPath });
-    renderTree();
+    const newTree = await invoke("scan_directory", { path: rootPath });
+    // P1: build a cheap signature of the tree structure; if it's unchanged
+    // since the last render, skip the DOM wipe entirely. This avoids the
+    // ~5000 listener churn every 5s on large vaults.
+    const sig = treeSignature(newTree);
+    const structChanged = sig !== prevTreeSignature;
+    fileTree = newTree;
+    if (structChanged) {
+      prevTreeSignature = sig;
+      renderTree();
+    } else {
+      // Structure unchanged: just refresh dynamic row state (pin markers, etc.)
+      refreshRowState();
+    }
     updateSelection(activeNotePath);
   } catch (e) {
     if (!silent) showError(String(e));
   } finally {
     isRefreshing = false;
   }
+}
+
+// Stable string signature of the tree's shape + names. Equal signatures mean
+// the rendered tree would be identical, so we can skip the rebuild.
+function treeSignature(nodes) {
+  let out = "";
+  const walk = (list) => {
+    for (const n of list) {
+      out += n.path + "|" + (n.is_dir ? "d" : "f") + "\n";
+      if (n.is_dir && n.children.length) walk(n.children);
+    }
+  };
+  walk(nodes || []);
+  return out;
+}
+
+// Lightweight refresh of per-row state without rebuilding the DOM: updates pin
+// markers and selection. Called when the tree structure is unchanged.
+function refreshRowState() {
+  for (const row of flatItems) {
+    const isPinned = pinned.has(row.dataset.path);
+    row.classList.toggle("is-pinned", isPinned);
+  }
+}
+
+// ============================================================
+// Recent / pinned (Feature 4)
+// ============================================================
+
+function persistPinned() {
+  localStorage.setItem(PINNED_KEY, JSON.stringify([...pinned]));
+}
+
+function pushRecent(path) {
+  if (!path) return;
+  recent = [path, ...recent.filter((p) => p !== path)].slice(0, MAX_RECENT);
+  localStorage.setItem(RECENT_KEY, JSON.stringify(recent));
+}
+
+function togglePinned(path) {
+  if (pinned.has(path)) pinned.delete(path);
+  else pinned.add(path);
+  persistPinned();
+  refreshRowState();
+  renderPinnedSection();
+}
+
+// Render a "Pinned" quick-access section at the top of the sidebar (above the
+// tree). Pinned paths that no longer exist are pruned.
+function ensureSpecialSections() {
+  let pinnedEl = document.getElementById("pinned-section");
+  let recentEl = document.getElementById("recent-section");
+  if (!pinnedEl) {
+    pinnedEl = document.createElement("div");
+    pinnedEl.id = "pinned-section";
+    pinnedEl.className = "special-section";
+    fileTreeEl.before(pinnedEl);
+  }
+  if (!recentEl) {
+    recentEl = document.getElementById("recent-section-wrapper");
+  }
+  return { pinnedEl };
+}
+
+function renderPinnedSection() {
+  let pinnedEl = document.getElementById("pinned-section");
+  // Only show pinned section if there are pinned notes.
+  const valid = [...pinned].filter((p) => nodeExists(p));
+  if (valid.length === 0) {
+    if (pinnedEl) pinnedEl.remove();
+    // prune stale pins
+    if (pinned.size !== valid.length) {
+      pinned = new Set(valid);
+      persistPinned();
+    }
+    return;
+  }
+  if (!pinnedEl) {
+    pinnedEl = document.createElement("div");
+    pinnedEl.id = "pinned-section";
+    pinnedEl.className = "special-section";
+    fileTreeEl.before(pinnedEl);
+  }
+  pinnedEl.innerHTML = "";
+  const header = document.createElement("div");
+  header.className = "section-header";
+  header.innerHTML = iconHTML("eye");
+  header.appendChild(document.createTextNode("Pinned"));
+  pinnedEl.appendChild(header);
+
+  for (const path of valid) {
+    const row = document.createElement("div");
+    row.className = "tree-row pinned-row";
+    row.dataset.path = path;
+    row.dataset.isDir = "false";
+    const ic = document.createElement("span");
+    ic.className = "tree-icon";
+    ic.innerHTML = iconHTML("file-text");
+    const label = document.createElement("span");
+    label.className = "tree-label";
+    label.textContent = stripPrefix(path.split("/").pop()).replace(/\.md$/, "");
+    row.appendChild(ic);
+    row.appendChild(label);
+    row.addEventListener("click", () => {
+      if (dragState.wasDragging) return;
+      openNote(path);
+    });
+    pinnedEl.appendChild(row);
+  }
+  // Prune stale pins if any.
+  if (pinned.size !== valid.length) {
+    pinned = new Set(valid);
+    persistPinned();
+  }
+}
+
+function renderRecentSection() {
+  let recentEl = document.getElementById("recent-section");
+  const valid = recent.filter((p) => nodeExists(p));
+  if (valid.length === 0) {
+    if (recentEl) recentEl.remove();
+    return;
+  }
+  if (!recentEl) {
+    recentEl = document.createElement("div");
+    recentEl.id = "recent-section";
+    recentEl.className = "special-section";
+    fileTreeEl.before(recentEl);
+  }
+  recentEl.innerHTML = "";
+  const header = document.createElement("div");
+  header.className = "section-header";
+  header.appendChild(document.createTextNode("Recent"));
+  recentEl.appendChild(header);
+  for (const path of valid.slice(0, 5)) {
+    const row = document.createElement("div");
+    row.className = "tree-row recent-row";
+    row.dataset.path = path;
+    row.dataset.isDir = "false";
+    const ic = document.createElement("span");
+    ic.className = "tree-icon";
+    ic.innerHTML = iconHTML("file-text");
+    const label = document.createElement("span");
+    label.className = "tree-label";
+    label.textContent = stripPrefix(path.split("/").pop()).replace(/\.md$/, "");
+    row.appendChild(ic);
+    row.appendChild(label);
+    row.addEventListener("click", () => openNote(path));
+    recentEl.appendChild(row);
+  }
+}
+
+// Does a given relative path exist in the current tree?
+function nodeExists(path) {
+  return findNodeAndSiblings(fileTree, path) !== null;
 }
 
 function persistCollapsed() {
@@ -523,6 +754,9 @@ function renderTree() {
     return;
   }
   renderNodes(fileTree, fileTreeEl, 0, "");
+  // Feature 4: refresh special sections after a full rebuild.
+  renderPinnedSection();
+  renderRecentSection();
 }
 
 function renderNodes(nodes, container, depth, guideStr) {
@@ -663,6 +897,11 @@ function renderNodes(nodes, container, depth, guideStr) {
       dragState.deleteTimer = null;
       cancelDrag();
     });
+
+    // Feature 4: mark pinned notes with a class for the pin glyph.
+    if (!node.is_dir && pinned.has(node.path)) {
+      row.classList.add("is-pinned");
+    }
 
     container.appendChild(row);
     flatItems.push(row);
@@ -1002,15 +1241,40 @@ function startRename(row, node) {
 
 async function commitDelete(path, isDir) {
   try {
-    await invoke("delete_node", { path: `${rootPath}/${path}` });
+    // Feature 2: soft-delete into .aanote-trash/ and offer an undo. Falls back
+    // to permanent delete only if trashing fails (e.g. path outside root).
+    let trashPath = null;
+    try {
+      trashPath = await invoke("trash_node", {
+        rootPath,
+        path: `${rootPath}/${path}`,
+      });
+    } catch (trashErr) {
+      // Fallback: hard delete (matches old behavior).
+      await invoke("delete_node", { path: `${rootPath}/${path}` });
+    }
     if (activeNotePath === path || activeNotePath?.startsWith(path + "/")) {
       activeNotePath = null;
+      activeNoteMtime = null;
       titleInput.value = "";
       setEditorContent("");
       editorPlaceholder.classList.remove("hidden");
       editorContainer.classList.add("hidden");
     }
     await loadTree();
+    // Offer undo if we soft-deleted.
+    if (trashPath) {
+      lastDeleted = { trashPath, path };
+      showUndoToast(`Deleted ${path.split("/").pop()}`, async () => {
+        try {
+          await invoke("restore_from_trash", { rootPath, trashPath });
+          await loadTree();
+          showBanner("Restored", "info");
+        } catch (e) {
+          showError(String(e));
+        }
+      });
+    }
   } catch (err) {
     showError(String(err));
   }
@@ -1029,22 +1293,30 @@ async function requestDelete(item) {
 async function openNote(path, focusTitle = false) {
   if (isDirty && activeNotePath) await saveNote();
   try {
-    const content = await invoke("read_note", {
-      path: `${rootPath}/${path}`,
-    });
+    const abs = `${rootPath}/${path}`;
+    const content = await invoke("read_note", { path: abs });
     activeNotePath = path;
+    // C3: record the on-disk mtime so we can detect if a sync overwrites the
+    // file before the editor next saves.
+    try {
+      activeNoteMtime = await invoke("file_mtime", { path: abs });
+    } catch {
+      activeNoteMtime = null;
+    }
     editorPlaceholder.classList.add("hidden");
     editorContainer.classList.remove("hidden");
-    
+
     // Set title field (strip numeric prefix + .md extension)
     const rawName = path.split("/").pop();
     titleInput.value = rawName.replace(PREFIX_RE, "").replace(/\.md$/, "");
-    
+
     setEditorContent(content);
     isDirty = false;
     updateSelection(path);
+    pushRecent(path);
+    renderRecentSection();
     if (isMobile()) applySidebar(false);
-    
+
     if (focusTitle) {
       titleInput.focus();
       titleInput.select();
@@ -1091,14 +1363,21 @@ async function queueAutoSync(forceNow = false) {
     try {
       const status = await invoke("gdrive_status");
       if (status === "connected" && rootPath) {
-        setSyncSpinner(true);
-        await invoke("gdrive_sync", { rootPath });
+        setSyncStatus("syncing");
+        const res = await invoke("gdrive_sync", { rootPath });
         await loadTree(true);
-        setSyncSpinner(false);
+        // C3: if the active note was overwritten by a remote download during
+        // sync, reload it into the editor (unless the user has unsaved edits,
+        // which the mtime-guarded saveNote will preserve as a conflict copy).
+        await reloadActiveIfChanged();
+        setSyncStatus("synced", res);
+      } else if (status === "disconnected") {
+        // A sync was queued but Drive is no longer connected.
+        setSyncStatus("offline");
       }
     } catch (e) {
       console.error("Auto-sync failed:", e);
-      setSyncSpinner(false);
+      setSyncStatus("error");
     }
   };
 
@@ -1112,11 +1391,34 @@ async function queueAutoSync(forceNow = false) {
 async function saveNote(forceSync = false) {
   if (!activeNotePath) return;
   if (isDirty) {
+    const abs = `${rootPath}/${activeNotePath}`;
     try {
-      await invoke("save_note", {
-        path: `${rootPath}/${activeNotePath}`,
+      // C3/C6: save only if the file on disk still matches the mtime we last
+      // loaded. If a background sync downloaded a newer version, the save is
+      // refused; we reload the editor and surface a conflict notice instead
+      // of clobbering the remote version.
+      const saved = await invoke("save_note_if_unchanged", {
+        path: abs,
         content: getEditorContent(),
+        expectedMtimeMs: activeNoteMtime,
       });
+      if (!saved) {
+        // Disk changed under us — reload the remote version and keep the
+        // user's edits as a conflict copy so nothing is lost.
+        const localText = getEditorContent();
+        await invoke("read_note", { path: abs }).then(async (remote) => {
+          if (remote !== localText) {
+            await saveLocalConflictCopy(abs, localText);
+            showBanner("Note updated on disk; your edits saved as a conflict copy", "info");
+          }
+          setEditorContent(remote);
+          activeNoteMtime = await invoke("file_mtime", { path: abs });
+        });
+        isDirty = false;
+        return;
+      }
+      // Refresh mtime to the just-saved value so subsequent saves compare correctly.
+      activeNoteMtime = await invoke("file_mtime", { path: abs });
       isDirty = false;
     } catch (e) {
       showError(String(e));
@@ -1124,6 +1426,61 @@ async function saveNote(forceSync = false) {
     }
   }
   queueAutoSync(forceSync);
+}
+
+// Write a local conflict copy via the backend's create_note (Feature 1, FE).
+async function saveLocalConflictCopy(absPath, content) {
+  try {
+    const base = absPath.replace(/\.md$/, "");
+    const ts = new Date().toISOString().replace(/[:.]/g, "-").slice(0, 15);
+    const conflictPath = `${base} (local conflict ${ts}).md`;
+    // create_note rejects existing names, so this unique name is safe.
+    const created = await invoke("create_note", {
+      dirPath: absPath.slice(0, absPath.lastIndexOf("/")) || rootPath,
+      name: `${base.split("/").pop()} (local conflict ${ts})`,
+    });
+    if (created) {
+      await invoke("save_note", { path: created, content });
+    }
+  } catch (e) {
+    console.error("Failed to save local conflict copy", e);
+  }
+}
+
+// C3: after a sync, check whether the active note's on-disk content changed
+// (e.g. a remote download overwrote it). If so, and the editor has no unsaved
+// edits, reload the content so the user isn't looking at a stale version.
+async function reloadActiveIfChanged() {
+  if (!activeNotePath) return;
+  const abs = `${rootPath}/${activeNotePath}`;
+  let currentMtime;
+  try {
+    currentMtime = await invoke("file_mtime", { path: abs });
+  } catch {
+    return;
+  }
+  if (activeNoteMtime !== null && currentMtime === activeNoteMtime) return; // unchanged
+  // The file changed on disk.
+  if (isDirty) {
+    // User has unsaved edits — leave the editor as-is. The next save will
+    // detect the divergence and create a conflict copy.
+    return;
+  }
+  try {
+    const content = await invoke("read_note", { path: abs });
+    setEditorContent(content);
+    activeNoteMtime = currentMtime;
+  } catch {
+    // File may have been removed by sync (remote delete). Close the editor.
+    if (activeNotePath) {
+      activeNotePath = null;
+      activeNoteMtime = null;
+      titleInput.value = "";
+      setEditorContent("");
+      editorPlaceholder.classList.remove("hidden");
+      editorContainer.classList.add("hidden");
+    }
+  }
 }
 
 // ============================================================
@@ -1235,6 +1592,15 @@ ctxDelete.addEventListener("click", () => {
   hideContextMenu();
 });
 
+if (ctxPin) {
+  ctxPin.addEventListener("click", () => {
+    if (contextTarget && !contextTarget.node.is_dir) {
+      togglePinned(contextTarget.node.path);
+    }
+    hideContextMenu();
+  });
+}
+
 document.addEventListener("click", (e) => {
   if (!contextMenu.contains(e.target)) {
     hideContextMenu();
@@ -1270,47 +1636,92 @@ async function runSearch(query) {
     return;
   }
   try {
-    const matches = await invoke("search_notes", { root: rootPath, query });
+    // Feature 3: fetch hits with content snippets for richer results.
+    const hits = await invoke("search_notes_snippet", { root: rootPath, query });
     searchResults.innerHTML = "";
-    searchHits = matches;
-    searchSelectedIndex = matches.length > 0 ? 0 : -1;
-    
-    if (matches.length === 0) {
+    searchHits = hits.map((h) => h.path);
+    searchSelectedIndex = hits.length > 0 ? 0 : -1;
+
+    if (hits.length === 0) {
       searchResults.innerHTML = '<div class="search-empty">// no matches found</div>';
       return;
     }
-    
-    matches.forEach((path, i) => {
+
+    const qLower = query.toLowerCase();
+    hits.forEach((hit, i) => {
+      const path = hit.path;
       const div = document.createElement("div");
       div.className = "search-hit" + (i === 0 ? " focused" : "");
-      
+
+      const top = document.createElement("div");
+      top.className = "search-hit-top";
+
       const icon = document.createElement("span");
       icon.className = "ic";
       icon.innerHTML = iconHTML("file-text");
-      
+
       const name = document.createElement("span");
       name.className = "search-hit-name";
       name.textContent = stripPrefix(path).replace(/\.md$/, "");
-      
+
       const dirStr = parentDirOf(path);
       const dirSpan = document.createElement("span");
       dirSpan.className = "search-hit-dir";
       dirSpan.textContent = dirStr ? stripPrefix(dirStr) + "/" : "~/";
-      
-      div.appendChild(icon);
-      div.appendChild(name);
-      div.appendChild(dirSpan);
-      
+
+      top.appendChild(icon);
+      top.appendChild(name);
+      top.appendChild(dirSpan);
+
+      // Snippet line with the matched term highlighted (Feature 3).
+      if (hit.snippet) {
+        const snip = document.createElement("div");
+        snip.className = "search-hit-snippet";
+        snip.appendChild(buildHighlightedSnippet(hit.snippet, qLower));
+        div.appendChild(top);
+        div.appendChild(snip);
+      } else {
+        div.appendChild(top);
+      }
+
       div.addEventListener("click", () => {
         exitSearchMode();
         openNote(path);
       });
-      
+
       searchResults.appendChild(div);
     });
   } catch (e) {
     showError(String(e));
   }
+}
+
+// Build a snippet DOM node with the query term bolded.
+function buildHighlightedSnippet(snippet, qLower) {
+  const frag = document.createDocumentFragment();
+  const lower = snippet.toLowerCase();
+  let i = 0;
+  while (i < snippet.length) {
+    const idx = lower.indexOf(qLower, i);
+    if (idx === -1) {
+      frag.appendChild(document.createTextNode(sliceSafe(snippet, i)));
+      break;
+    }
+    if (idx > i) frag.appendChild(document.createTextNode(sliceSafe(snippet, i, idx)));
+    const mark = document.createElement("b");
+    mark.className = "search-match";
+    mark.textContent = sliceSafe(snippet, idx, idx + qLower.length);
+    frag.appendChild(mark);
+    i = idx + qLower.length;
+  }
+  return frag;
+}
+
+// Safe slice that respects surrogate pairs (keeps it simple: char-based).
+function sliceSafe(s, from, to) {
+  const arr = [...s];
+  if (to === undefined) return arr.slice(from).join("");
+  return arr.slice(from, to).join("");
 }
 
 function updateSearchSelection() {
@@ -1397,22 +1808,116 @@ function showError(msg) {
   showBanner(msg, "error");
 }
 
-// Show / hide the sync spinner in the action bar.
-let spinnerInterval = null;
+// Show a toast with an "Undo" action (Feature 2). `onUndo` runs if clicked.
+function showUndoToast(msg, onUndo) {
+  errorBanner.innerHTML = "";
+  errorBanner.className = "";
+  errorBanner.classList.add("info");
+  errorBanner.classList.remove("hidden");
+
+  const label = document.createElement("span");
+  label.textContent = msg;
+  const undoBtn = document.createElement("button");
+  undoBtn.className = "undo-btn";
+  undoBtn.textContent = "Undo";
+  undoBtn.addEventListener("click", () => {
+    errorBanner.classList.add("hidden");
+    if (onUndo) onUndo();
+  });
+  errorBanner.appendChild(label);
+  errorBanner.appendChild(undoBtn);
+
+  clearTimeout(errorBanner._t);
+  errorBanner._t = setTimeout(() => {
+    errorBanner.classList.add("hidden");
+    errorBanner.innerHTML = "";
+  }, 6000);
+}
+
+// Format a char count into a compact human string: 0, 850, 1.2k, 24k.
+function formatChars(n) {
+  if (n < 1000) return String(n);
+  if (n < 10000) return (n / 1000).toFixed(1) + "k";
+  return Math.round(n / 1000) + "k";
+}
+
+// Braille spinner — the original "really cool" sync loader. Cycled while syncing.
 const spinnerChars = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
-function setSyncSpinner(show) {
-  if (!syncSpinner) return;
-  syncSpinner.classList.toggle("hidden", !show);
-  clearInterval(spinnerInterval);
-  if (show) {
-    let i = 0;
-    syncSpinner.textContent = spinnerChars[0];
-    spinnerInterval = setInterval(() => {
-      i = (i + 1) % spinnerChars.length;
-      syncSpinner.textContent = spinnerChars[i];
-    }, 80);
+let spinnerInterval = null;
+
+// Drive the sync-status chip. state ∈ "syncing" | "synced" | "offline" | "error" | null.
+// `detail` is a {uploaded, downloaded, conflicts, charsSynced, summary} object for "synced".
+function setSyncStatus(state, detail) {
+  if (!syncStatus) return;
+  if (syncStatusTimer) { clearTimeout(syncStatusTimer); syncStatusTimer = null; }
+  // Stop any running braille animation.
+  if (spinnerInterval) { clearInterval(spinnerInterval); spinnerInterval = null; }
+
+  // Clear state classes.
+  syncStatus.classList.remove("syncing", "synced", "offline", "error");
+
+  if (state === null) {
+    syncStatus.classList.add("hidden");
+    // Restore the action bar's icon row.
+    if (actionBar) actionBar.classList.remove("syncing");
+    return;
+  }
+
+  // While any sync status is visible, the bar swaps to show it (icons hidden).
+  if (actionBar) actionBar.classList.add("syncing");
+
+  // Icon: during syncing we cycle the braille spinner (restored by request);
+  // the other states use a static SVG.
+  if (state === "syncing") {
+    if (syncStatusIcon) {
+      let i = 0;
+      syncStatusIcon.textContent = spinnerChars[0];
+      spinnerInterval = setInterval(() => {
+        i = (i + 1) % spinnerChars.length;
+        syncStatusIcon.textContent = spinnerChars[i];
+      }, 80);
+    }
   } else {
-    syncSpinner.textContent = "";
+    const iconMap = {
+      synced: "check",
+      offline: "wifi-off",
+      error: "alert-triangle",
+    };
+    if (syncStatusIcon) syncStatusIcon.innerHTML = iconHTML(iconMap[state] || "check");
+  }
+
+  let text = "";
+  if (state === "syncing") {
+    text = "syncing…";
+  } else if (state === "synced") {
+    const notes = (detail?.uploaded || 0) + (detail?.downloaded || 0);
+    const chars = detail?.charsSynced || 0;
+    if (notes === 0 && !(detail?.conflicts)) {
+      text = "up to date";
+    } else {
+      const parts = [];
+      if (notes > 0) parts.push(`${notes} note${notes === 1 ? "" : "s"}`);
+      if (detail?.conflicts > 0) parts.push(`${detail.conflicts} conflict${detail.conflicts === 1 ? "" : "s"}`);
+      text = "synced " + parts.join(" · ");
+      if (chars > 0) text += ` · ${formatChars(chars)} chars`;
+    }
+  } else if (state === "offline") {
+    text = "offline";
+  } else if (state === "error") {
+    text = "sync failed";
+  }
+  if (syncStatusText) syncStatusText.textContent = text;
+
+  syncStatus.classList.add(state);
+  syncStatus.classList.remove("hidden");
+
+  // Synced/offline/error are transient — after the fade, hide the status and
+  // restore the bar's icon row. Syncing stays until the sync finishes.
+  if (state !== "syncing") {
+    syncStatusTimer = setTimeout(() => {
+      syncStatus.classList.add("hidden");
+      if (actionBar) actionBar.classList.remove("syncing");
+    }, state === "synced" ? 2500 : 4000);
   }
 }
 
@@ -1440,7 +1945,7 @@ document.addEventListener("keydown", (e) => {
 
   if ((e.ctrlKey || e.metaKey) && e.key === "s") {
     e.preventDefault();
-    saveNote();
+    saveNote(true); // force a sync after saving
     return;
   }
   if ((e.ctrlKey || e.metaKey) && e.key === "f") {

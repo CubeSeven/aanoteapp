@@ -7,6 +7,8 @@
   box-shadow: none !important;
 }
 
+/* Kill flashy *animations*, but allow short color/background *transitions*
+   (registered per-component below). The spinner is exempt. */
 *:not(#sync-spinner) {
   animation: none !important;
 }
@@ -16,16 +18,79 @@
 }
 
 :root {
-  --bg: #ffffff;
-  --fg: #000000;
-  --border: #cccccc;
-  --muted: #888888;
-  --error-bg: #000000;
+  /* === Grayscale ramp === (8 levels; each surface has its own) */
+  --fg:        #1536ff;   /* primary text / ink — vivid blue (Paper theme) */
+  --fg-2:      #404040;   /* high-emphasis secondary (kept gray for structure) */
+  --muted:     #6b6e6d;   /* secondary text (warmer to suit the canvas) */
+  --muted-2:   #9a9d9c;   /* tertiary text / hints */
+  --border:    #c8ccca;   /* hairline separators, tuned for the gray canvas */
+  --border-2:  #b5b9b8;   /* active dividers, focused edges */
+  --bg-subtle: #ced1cf;   /* hover surface — DARKER than bg so it reads as recess */
+  --bg:        #dddfde;   /* canvas — warm light gray (paper) */
+
+  /* === Semantic (kept compatible with existing rules) === */
+  --error-bg: #111111;
   --error-fg: #ff4444;
+
+  /* === Spacing scale (4px base) === */
+  --sp-1: 4px;
+  --sp-2: 8px;
+  --sp-3: 12px;
+  --sp-4: 16px;
+  --sp-5: 24px;
+  --sp-6: 32px;
+
+  /* === Motion === (color/background only — no layout cost) */
+  --ease: 80ms ease;
+
   --font: ui-monospace, SFMono-Regular, Consolas, "Liberation Mono", Menlo, monospace;
   --sidebar-w: 260px;
   --header-h: 36px;
   --touch: 34px;
+}
+
+/* ============================================================
+   Themes — each overrides the full grayscale ramp so every
+   component stays coherent. The active theme is set on <html>
+   via data-theme="..." from JS (applyTheme). Default (no attr)
+   is "paper". Hand-tuned for contrast + harmony.
+   ============================================================ */
+
+/* Light — clean pure white, the classic editor look. */
+[data-theme="light"] {
+  --fg:        #111111;
+  --fg-2:      #404040;
+  --muted:     #6b6b6b;
+  --muted-2:   #a0a0a0;
+  --border:    #e5e5e5;
+  --border-2:  #d0d0d0;
+  --bg-subtle: #f2f2f2;
+  --bg:        #ffffff;
+}
+
+/* Dark — true terminal dark. Inverted relationships: hover surfaces are
+   LIGHTER than bg (recede upward instead of downward). */
+[data-theme="dark"] {
+  --fg:        #e8e8e8;
+  --fg-2:      #b8b8b8;
+  --muted:     #8a8a8a;
+  --muted-2:   #5f5f5f;
+  --border:    #2e2e2e;
+  --border-2:  #3f3f3f;
+  --bg-subtle: #2a2a2a;
+  --bg:        #1a1a1a;
+}
+
+/* Sepia — warm cream + ink, easy on the eyes for long-form reading. */
+[data-theme="sepia"] {
+  --fg:        #3a2f1f;
+  --fg-2:      #5a4a30;
+  --muted:     #8a7a5a;
+  --muted-2:   #b0a075;
+  --border:    #d9cda7;
+  --border-2:  #c4b58a;
+  --bg-subtle: #e6d9b0;
+  --bg:        #f1e6c8;
 }
 
 html, body {
@@ -38,6 +103,24 @@ html, body {
   overflow: hidden;
   display: flex;
   flex-direction: column;
+}
+
+/* Inverted selection reads as intentional monochrome (Tier 3). */
+::selection {
+  background: var(--fg);
+  color: var(--bg);
+}
+
+/* Keyboard focus ring: dotted, muted — visible only on keyboard nav.
+   `:focus-visible` keeps mouse users from seeing it. */
+:focus-visible {
+  outline: 2px dotted var(--muted);
+  outline-offset: -2px;
+}
+/* Keep CM editor outline-free (it manages its own caret focus). */
+.cm-editor:focus-visible,
+.cm-editor.cm-focused:focus-visible {
+  outline: none;
 }
 
 #app {
@@ -68,14 +151,15 @@ html, body {
   background: transparent;
   color: var(--fg);
   border: none;
-  padding: 4px;
+  padding: var(--sp-1);
   cursor: pointer;
   min-width: 28px;
   min-height: 28px;
+  transition: background var(--ease), color var(--ease);
 }
 .icon-btn:hover {
-  background: var(--fg);
-  color: var(--bg);
+  background: var(--bg-subtle);
+  color: var(--fg);
 }
 .icon-btn:hover .ic svg {
   stroke: var(--bg);
@@ -93,7 +177,7 @@ html, body {
   display: flex;
   flex-direction: column;
   overflow: hidden;
-  padding: 12px 14px; /* Breathing room from edges */
+  padding: var(--sp-3) var(--sp-3);
 }
 
 #file-navigator:focus {
@@ -104,13 +188,11 @@ html, body {
   margin-left: calc(-1 * var(--sidebar-w));
 }
 
-/* Sidebar header removed — tree starts at the top */
-
 #file-tree {
   flex: 1;
   overflow-y: auto;
   overflow-x: hidden;
-  padding: 4px 0 64px 0;
+  padding: var(--sp-1) 0 var(--sp-6) 0;
   position: relative;
 }
 
@@ -119,6 +201,9 @@ html, body {
   display: flex;
   align-items: center;
   min-height: 30px;
+  padding: 0 var(--sp-1);
+  /* Transparent left border reserves space so selection doesn't shift layout. */
+  border-left: 2px solid transparent;
   cursor: pointer;
   user-select: none;
   -webkit-user-select: none;
@@ -126,11 +211,13 @@ html, body {
   overflow: hidden;
   position: relative;
   touch-action: pan-y;
+  color: var(--muted);
+  transition: background var(--ease), color var(--ease), border-color var(--ease);
 }
 
 .tree-guides {
   flex-shrink: 0;
-  color: var(--border);
+  color: var(--border-2);
   font-size: 14px;
   font-family: var(--font);
   line-height: 1;
@@ -140,23 +227,39 @@ html, body {
 .tree-icon {
   flex-shrink: 0;
   display: inline-flex;
-  margin: 0 4px;
+  margin: 0 var(--sp-1);
+  opacity: 0.7;
 }
 
 .tree-label {
   overflow: hidden;
   text-overflow: ellipsis;
-  padding-right: 6px;
+  padding-right: var(--sp-2);
 }
 
+/* Hover: subtle surface fill, full-color text — no underline (cleaner). */
 @media (hover: hover) {
-  .tree-row:hover .tree-label {
-    text-decoration: underline;
+  .tree-row:hover {
+    background: var(--bg-subtle);
+    color: var(--fg);
   }
 }
 
+/* Selected: left-border accent (terminal-file-manager cue) + full color.
+   Uses a real left border (reserved transparent by default) so it doesn't
+   shift layout and doesn't clash with the global box-shadow ban or the
+   drop-indicator pseudo-elements. */
+.tree-row.selected {
+  color: var(--fg);
+  border-left-color: var(--fg);
+}
 .tree-row.selected .tree-label {
   font-weight: bold;
+}
+
+/* Pinned star marker color */
+.tree-row.is-pinned > .tree-label::after {
+  color: var(--muted-2);
 }
 
 /* Row being dragged: source dims, lifts visually */
@@ -165,10 +268,12 @@ html, body {
 }
 
 .tree-empty {
-  opacity: 0.4;
-  padding: 8px;
+  color: var(--muted-2);
+  padding: var(--sp-4) var(--sp-2);
   cursor: default;
   white-space: normal;
+  font-size: 13px;
+  text-align: center;
 }
 
 .tree-input {
@@ -178,9 +283,9 @@ html, body {
   color: var(--bg);
   border: none;
   outline: none;
-  padding: 6px 8px;
-  width: calc(100% - 16px);
-  margin: 2px 8px;
+  padding: var(--sp-2);
+  width: calc(100% - var(--sp-4));
+  margin: var(--sp-1) var(--sp-2);
 }
 
 /* Drop indicators */
@@ -243,6 +348,7 @@ html, body {
   font-size: 12px;
   user-select: none;
   flex-shrink: 0;
+  border-bottom: 1px solid var(--border);
   -webkit-app-region: drag;
 }
 #title-buttons {
@@ -254,17 +360,19 @@ html, body {
   height: 100%;
   border: none;
   background: transparent;
-  color: var(--fg);
+  color: var(--muted);
   font-family: var(--font);
   font-size: 14px;
   cursor: pointer;
   display: flex;
   align-items: center;
   justify-content: center;
+  transition: background var(--ease), color var(--ease);
   -webkit-app-region: no-drag;
 }
 #title-buttons button:hover {
-  background: var(--border);
+  background: var(--bg-subtle);
+  color: var(--fg);
 }
 #btn-close:hover {
   background: #c00;
@@ -290,8 +398,9 @@ html, body {
   align-items: center;
   justify-content: center;
   font-family: var(--font);
-  font-size: 14px;
-  color: var(--muted);
+  font-size: 13px;
+  letter-spacing: 0.5px;
+  color: var(--muted-2);
   user-select: none;
 }
 #editor-placeholder.hidden {
@@ -301,10 +410,10 @@ html, body {
 #editor-container {
   width: 100%;
   max-width: 720px;
-  padding: 24px;
+  padding: var(--sp-5);
   display: flex;
   flex-direction: column;
-  gap: 16px;
+  gap: var(--sp-4);
 }
 #editor-container.hidden {
   display: none !important;
@@ -318,12 +427,12 @@ html, body {
   background: transparent;
   border: none;
   outline: none;
-  padding: 28px 0 8px;
+  padding: var(--sp-6) 0 var(--sp-2);
   width: 100%;
   line-height: 1.2;
 }
 #title-input::placeholder {
-  color: var(--muted);
+  color: var(--muted-2);
 }
 
 #cm-host {
@@ -342,60 +451,93 @@ html, body {
 /* ===== Unified action bar (bottom center) — high contrast ===== */
 #action-bar {
   position: fixed;
-  bottom: 12px;
+  bottom: var(--sp-3);
   left: 50%;
   transform: translateX(-50%);
   display: flex;
-  align-items: center;
-  background: #000000;
+  align-items: stretch;
+  background: var(--fg);
   border: none;
   z-index: 50;
+  /* Soft corners (8px) — a rounded-square that reads as a deliberate accent
+     against the otherwise hard-edged UI. Overrides the global
+     `border-radius: 0 !important`. */
+  border-radius: 8px !important;
+  overflow: hidden;
+}
+/* The default icon row. */
+#action-bar-icons {
+  display: flex;
+  align-items: center;
 }
 
 .action-btn {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  background: #000000;
-  color: #ffffff;
+  background: var(--fg);
+  color: var(--bg);
   border: none;
   width: 44px;
   height: var(--touch);
   cursor: pointer;
   user-select: none;
+  position: relative;
+  transition: background var(--ease);
 }
 .action-btn .ic svg {
-  stroke: #ffffff;
+  stroke: var(--bg);
 }
 
-.action-btn:hover,
-.action-btn.active {
-  background: #333333;
-  color: #ffffff;
+/* Stronger hover — an overlay of the opposite tone (the bar's text color at
+   low opacity), so it reads correctly regardless of which theme is active. */
+.action-btn:hover {
+  background: color-mix(in srgb, var(--bg) 22%, var(--fg));
 }
-.action-btn:hover .ic svg,
-.action-btn.active .ic svg {
-  stroke: #ffffff;
+
+/* Group separator between the view-toggle and the action buttons. */
+.action-sep {
+  width: 1px;
+  height: 18px;
+  background: var(--bg);
+  opacity: 0.2;
+  flex-shrink: 0;
+}
+
+/* Active state for the sidebar toggle: a small bar under the icon signals
+   "panel is open". Applied via .active on #sidebar-toggle from JS. */
+.action-btn.active::after {
+  content: "";
+  position: absolute;
+  bottom: 4px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 14px;
+  height: 2px;
+  background: var(--bg);
 }
 
 /* ===== Auto-sync setting item ===== */
 #auto-sync-setting {
   display: flex;
   align-items: center;
-  gap: 8px;
-  margin-top: 4px;
+  gap: var(--sp-2);
+  margin-top: var(--sp-1);
 }
 #auto-sync-setting input[type="checkbox"] {
   -webkit-appearance: none;
   appearance: none;
   width: 16px;
   height: 16px;
-  border: 1px solid var(--fg);
-  border-radius: 2px;
+  border: 1px solid var(--border-2);
   background: var(--bg);
   position: relative;
   cursor: pointer;
   margin: 0;
+  transition: background var(--ease), border-color var(--ease);
+}
+#auto-sync-setting input[type="checkbox"]:hover {
+  border-color: var(--muted);
 }
 #auto-sync-setting input[type="checkbox"]:checked {
   background: var(--fg);
@@ -411,26 +553,73 @@ html, body {
   line-height: 1;
 }
 
-/* ===== Sync spinner styling ===== */
-#sync-spinner {
-  display: inline-flex;
+/* ===== Sync status chip (above the action bar) ===== */
+/* Transient: hidden by default, shown during + briefly after a sync, and when
+   offline/error. States are driven by a class on #sync-status:
+   .syncing | .synced | .offline | .error
+*/
+/* The sync-status is a sibling layer inside #action-bar. When visible it
+   takes the bar's space (the icons hide), so the bar's content "swaps" to
+   sync info — same bar, same corners, same bg, different content. The bar
+   grows/shrinks to fit whichever layer is shown. */
+#sync-status {
+  display: flex;
   align-items: center;
   justify-content: center;
-  width: 44px;
+  gap: var(--sp-2);
   height: var(--touch);
-  font-family: monospace;
-  font-size: 16px;
-  color: #ffffff;
-  user-select: none;
+  padding: 0 var(--sp-3);
+  font-family: var(--font);
+  font-size: 11px;
+  line-height: 1;
+  background: var(--fg);   /* matches the bar — seamless */
+  color: var(--bg);
+  white-space: nowrap;
+  transition: opacity var(--ease);
 }
-#sync-spinner.hidden {
+#sync-status.hidden {
   display: none;
+}
+/* When sync-status is shown, hide the icon row so only one layer occupies the
+   bar (toggled via a class on #action-bar from JS). */
+#action-bar.syncing #action-bar-icons {
+  display: none;
+}
+#sync-status .sync-status-icon {
+  display: inline-flex;
+  width: 14px;
+  height: 14px;
+  align-items: center;
+  justify-content: center;
+}
+#sync-status .sync-status-icon svg {
+  width: 13px;
+  height: 13px;
+  stroke-width: 2;
+}
+/* Syncing: the icon slot shows the braille spinner (text), not an SVG. */
+#sync-status.syncing .sync-status-icon {
+  font-size: 15px;
+  line-height: 1;
+}
+
+/* Offline: the bar swaps to a muted surface (not the bold inverted bar) so it
+   reads as "inactive". */
+#sync-status.offline {
+  background: var(--bg-subtle);
+  color: var(--muted);
+}
+
+/* Error: stays the inverted bar (demands attention). */
+#sync-status.error {
+  background: var(--fg);
+  color: var(--bg);
 }
 
 /* ===== Settings button (bottom left inside sidebar) ===== */
 #sidebar-footer {
   margin-top: auto;
-  padding-top: 12px;
+  padding-top: var(--sp-3);
   display: flex;
   align-items: center;
 }
@@ -438,17 +627,17 @@ html, body {
 #btn-settings {
   background: transparent;
   border: none;
-  padding: 4px;
+  padding: var(--sp-1);
   cursor: pointer;
   display: flex;
   align-items: center;
   justify-content: center;
-  opacity: 0.35;
-  transition: opacity 0.15s ease;
+  opacity: 0.4;
+  transition: opacity var(--ease);
 }
 
 #btn-settings:hover {
-  opacity: 0.8;
+  opacity: 0.9;
 }
 
 #btn-settings svg {
@@ -477,21 +666,21 @@ html, body {
   width: 100%;
   max-width: 480px;
   background: var(--bg);
-  border: 1px solid var(--fg);
+  border: 1px solid var(--border-2);
   font-family: var(--font);
 }
 #settings-header {
-  padding: 12px 16px;
+  padding: var(--sp-3) var(--sp-4);
   font-weight: bold;
   border-bottom: 1px solid var(--border);
   font-size: 14px;
 }
 .setting-item {
-  padding: 16px;
+  padding: var(--sp-4);
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 12px;
+  gap: var(--sp-3);
 }
 .setting-label {
   font-size: 13px;
@@ -506,12 +695,13 @@ html, body {
   background: transparent;
   color: var(--muted);
   border: none;
-  padding: 6px 8px;
+  padding: var(--sp-2) var(--sp-2);
   font-family: var(--font);
   font-size: 11px;
   cursor: pointer;
   text-decoration: underline;
   text-underline-offset: 2px;
+  transition: color var(--ease);
 }
 .setting-btn-link:hover {
   color: var(--fg);
@@ -520,23 +710,23 @@ html, body {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 6px;
+  gap: var(--sp-2);
 }
 .setting-actions > span {
   font-size: 12px;
   color: var(--muted);
-  margin-right: 6px;
+  margin-right: var(--sp-2);
 }
 .setting-btn {
   background: var(--bg);
   color: var(--fg);
-  border: 1px solid var(--fg);
-  padding: 6px 12px;
+  border: 1px solid var(--border-2);
+  padding: var(--sp-2) var(--sp-3);
   font-family: var(--font);
   font-size: 12px;
   cursor: not-allowed;
   opacity: 0.6;
-  transition: background 0.15s, color 0.15s;
+  transition: background var(--ease), color var(--ease), border-color var(--ease);
 }
 .setting-btn.active {
   cursor: pointer;
@@ -545,15 +735,47 @@ html, body {
 .setting-btn.active:hover {
   background: var(--fg);
   color: var(--bg);
+  border-color: var(--fg);
 }
+
+/* ===== Theme swatches ===== */
+#theme-swatches {
+  display: flex;
+  gap: var(--sp-2);
+  flex-wrap: wrap;
+}
+.theme-swatch {
+  width: 44px;
+  height: 44px;
+  border: 1px solid var(--border-2);
+  cursor: pointer;
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-family: var(--font);
+  font-size: 16px;
+  font-weight: 700;
+  transition: transform var(--ease), border-color var(--ease);
+}
+.theme-swatch:hover {
+  transform: translateY(-2px);
+}
+/* Active swatch: a ring (using fg color so it shows on any theme's swatch). */
+.theme-swatch.active {
+  border: 2px solid var(--fg);
+  box-shadow: inset 0 0 0 2px var(--bg) !important; /* overrides global ban */
+}
+/* Each swatch is colored by its OWN theme via inline style from JS, so the
+   preview shows the actual fg/bg pairing. */
 
 /* ===== Spotlight search modal ===== */
 #context-menu {
   position: fixed;
   z-index: 500;
   background: var(--bg);
-  border: 1px solid var(--fg);
-  padding: 4px 0;
+  border: 1px solid var(--border-2);
+  padding: var(--sp-1) 0;
   font-family: var(--font);
   font-size: 13px;
   min-width: 140px;
@@ -562,13 +784,15 @@ html, body {
   display: none;
 }
 .context-item {
-  padding: 6px 12px;
+  padding: var(--sp-2) var(--sp-3);
   cursor: pointer;
   user-select: none;
+  color: var(--muted);
+  transition: background var(--ease), color var(--ease);
 }
 .context-item:hover {
-  background: var(--fg);
-  color: var(--bg);
+  background: var(--bg-subtle);
+  color: var(--fg);
 }
 
 /* ===== Spotlight search modal ===== */
@@ -587,7 +811,7 @@ html, body {
 #search-box {
   width: min(580px, 92vw);
   background: var(--bg);
-  border: 1px solid var(--fg);
+  border: 1px solid var(--border-2);
   display: flex;
   flex-direction: column;
   max-height: 60vh;
@@ -597,8 +821,8 @@ html, body {
 #search-box-row {
   display: flex;
   align-items: center;
-  gap: 8px;
-  padding: 10px 14px;
+  gap: var(--sp-2);
+  padding: var(--sp-3) var(--sp-4);
   border-bottom: 1px solid var(--border);
 }
 
@@ -614,17 +838,18 @@ html, body {
 
 #search-results {
   overflow-y: auto;
-  padding: 4px 0;
+  padding: var(--sp-1) 0;
 }
 
 .search-hit {
   display: flex;
   align-items: center;
-  gap: 8px;
-  padding: 8px 14px;
+  gap: var(--sp-2);
+  padding: var(--sp-2) var(--sp-4);
   cursor: pointer;
   white-space: nowrap;
   overflow: hidden;
+  transition: background var(--ease), color var(--ease);
 }
 .search-hit:hover,
 .search-hit.focused {
@@ -651,7 +876,7 @@ html, body {
   opacity: 0.6;
 }
 .search-empty {
-  padding: 12px 14px;
+  padding: var(--sp-3) var(--sp-4);
   color: var(--muted);
   font-size: 13px;
 }
@@ -662,10 +887,10 @@ html, body {
   bottom: 58px;
   left: 50%;
   transform: translateX(-50%);
-  background: var(--bg);
-  color: var(--fg);
+  background: var(--fg);
+  color: var(--bg);
   border: 1px solid var(--fg);
-  padding: 6px 12px;
+  padding: var(--sp-2) var(--sp-3);
   font-family: var(--font);
   font-size: 12px;
   z-index: 9999;
@@ -675,17 +900,19 @@ html, body {
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--sp-2);
 }
-#error-banner.info {
-  background: var(--bg);
-  color: var(--fg);
-  border: 1px solid var(--fg);
-}
+/* Info/success: subtle — light surface, muted border. */
+#error-banner.info,
 #error-banner.success {
   background: var(--bg);
   color: var(--fg);
-  border: 1px solid var(--fg);
+  border: 1px solid var(--border-2);
 }
+/* Error: inverted (full contrast) to actually demand attention. */
 #error-banner.error {
   background: var(--fg);
   color: var(--bg);
@@ -695,24 +922,137 @@ html, body {
   display: none;
 }
 
-/* ===== Scrollbars (hidden — keep functionality) ===== */
+/* ===== Scrollbars (thin, low-contrast — usable but unobtrusive) ===== */
+/* Tier 3: a 2px hairline thumb replaces the fully-hidden scrollbars, which
+   made long notes/list navigation disorienting. Auto-hides on Firefox via
+   the narrow width; WebKit keeps it visible but quiet. */
 #file-navigator,
 #file-tree,
 #editor-panel,
-#cm-host .cm-scroller {
-  scrollbar-width: none !important;          /* Firefox */
+#cm-host .cm-scroller,
+#search-results {
+  scrollbar-width: thin;
+  scrollbar-color: var(--border-2) transparent;
 }
 #file-navigator::-webkit-scrollbar,
-#file-navigator *::-webkit-scrollbar,
 #file-tree::-webkit-scrollbar,
-#file-tree *::-webkit-scrollbar,
 #editor-panel::-webkit-scrollbar,
-#editor-panel *::-webkit-scrollbar,
-#cm-host .cm-scroller::-webkit-scrollbar {
-  width: 0 !important;                       /* WebKit */
-  height: 0 !important;
-  display: none !important;
+#cm-host .cm-scroller::-webkit-scrollbar,
+#search-results::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
 }
+#file-navigator::-webkit-scrollbar-thumb,
+#file-tree::-webkit-scrollbar-thumb,
+#editor-panel::-webkit-scrollbar-thumb,
+#cm-host .cm-scroller::-webkit-scrollbar-thumb,
+#search-results::-webkit-scrollbar-thumb {
+  background: var(--border-2);
+}
+#file-navigator::-webkit-scrollbar-thumb:hover,
+#file-tree::-webkit-scrollbar-thumb:hover,
+#editor-panel::-webkit-scrollbar-thumb:hover,
+#cm-host .cm-scroller::-webkit-scrollbar-thumb:hover,
+#search-results::-webkit-scrollbar-thumb:hover {
+  background: var(--muted-2);
+}
+#file-navigator::-webkit-scrollbar-track,
+#file-tree::-webkit-scrollbar-track,
+#editor-panel::-webkit-scrollbar-track,
+#cm-host .cm-scroller::-webkit-scrollbar-track,
+#search-results::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+/* Editor text selection: soft gray, not harsh black (Tier 3). The CodeMirror
+   theme below overrides these for the editor surface specifically. */
+.cm-selectionBackground,
+.cm-content ::selection {
+  background: var(--border-2) !important;
+}
+
+/* ============================================================
+   Feature 2: undo button inside the toast
+   ============================================================ */
+.undo-btn {
+  margin-left: var(--sp-3);
+  background: transparent;
+  color: inherit;
+  border: 1px solid currentColor;
+  padding: 2px var(--sp-2);
+  font-family: var(--font);
+  font-size: 11px;
+  cursor: pointer;
+  transition: background var(--ease), color var(--ease);
+}
+.undo-btn:hover {
+  background: var(--bg);
+  color: var(--fg);
+}
+
+/* ============================================================
+   Feature 3: search hit snippet + match highlight
+   ============================================================ */
+.search-hit {
+  flex-wrap: wrap;
+}
+.search-hit-top {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  flex: 1 1 auto;
+  min-width: 0;
+}
+.search-hit-snippet {
+  flex: 1 0 100%;
+  font-size: 11px;
+  color: var(--muted);
+  padding: var(--sp-1) 0 var(--sp-1) 28px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.search-hit:hover .search-hit-snippet,
+.search-hit.focused .search-hit-snippet {
+  color: var(--bg);
+  opacity: 0.75;
+}
+.search-match {
+  font-weight: bold;
+}
+
+/* ============================================================
+   Feature 4: pinned / recent special sections in the sidebar
+   ============================================================ */
+.special-section {
+  border-bottom: 1px solid var(--border);
+  padding: var(--sp-1) 0;
+  margin-bottom: var(--sp-1);
+}
+.section-header {
+  font-size: 10px;
+  color: var(--muted-2);
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  padding: var(--sp-2) var(--sp-2) var(--sp-1);
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+}
+.section-header .ic {
+  width: 12px;
+  height: 12px;
+  opacity: 0.7;
+}
+.special-section .tree-row {
+  min-height: 28px;
+}
+/* Pinned marker shown on tree rows that are pinned */
+.tree-row.is-pinned > .tree-label::after {
+  content: " ★";
+  color: var(--muted-2);
+}
+
 
 /* ============================================================
    Mobile / narrow: sidebar overlay

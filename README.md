@@ -18,15 +18,24 @@ npm install
 npm run build
 ```
 
+`npm run build` first regenerates the editor bundle (`js/editor.js` → `js/cm.bundle.js`
+via esbuild), then compiles the Rust binary.
+
 Binary: `src-tauri/target/release/aanote`
+
+To rebuild only the editor bundle after editing `js/editor.js`:
+
+```bash
+npm run build:bundle
+```
 
 ### Google Drive sync
 
-Create a Google Cloud project, enable Drive API, create OAuth 2.0 credentials (Desktop app). Set them in `js/app.js`:
+Create a Google Cloud project, enable Drive API, create OAuth 2.0 credentials (Desktop app). Set them in `js/gdrive-config.js` (copy from `js/gdrive-config.example.js`):
 
 ```js
-const GDRIVE_CLIENT_ID = "YOUR_GOOGLE_CLIENT_ID";
-const GDRIVE_CLIENT_SECRET = "YOUR_GOOGLE_CLIENT_SECRET";
+export const GDRIVE_CLIENT_ID = "YOUR_GOOGLE_CLIENT_ID";
+export const GDRIVE_CLIENT_SECRET = "YOUR_GOOGLE_CLIENT_SECRET";
 ```
 
 Then rebuild: `npm run build`
@@ -41,9 +50,18 @@ Then rebuild: `npm run build`
 | Save + sync | Ctrl+S |
 | Toggle sidebar | Ctrl+\ |
 | Rename | F4 |
-| Delete | Del |
+| Delete (soft, undoable) | Del |
+| Pin / Unpin | right-click → Pin / Unpin |
 
 Settings → Google Drive → Connect → pick notes folder → Sync Now.
+
+### Data safety
+
+- **Atomic writes** — notes and the sync index are written via temp-file-then-rename, so a crash can't corrupt them.
+- **Trash & undo** — deletes move to `.aanote-trash/` (auto-purged after 30 days); an undo toast appears immediately.
+- **Sync conflicts** — when a note changed on both sides, the loser is preserved as a `<name> (conflict <timestamp>).md` copy instead of being silently overwritten.
+- **Sync serialization** — only one sync runs at a time; overlapping triggers are skipped.
+- **Paginated Drive listing** — vaults over 100 files sync correctly (no silent truncation).
 
 ## Cross-platform
 
